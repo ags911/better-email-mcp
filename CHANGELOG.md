@@ -2,6 +2,48 @@
 
 <!-- version list -->
 
+## v1.37.0-beta.2 (2026-07-25)
+
+### Bug Fixes
+
+- Drop rangeStrategy from update-type package rules
+  ([#1046](https://github.com/n24q02m/better-email-mcp/pull/1046),
+  [`def5a61`](https://github.com/n24q02m/better-email-mcp/commit/def5a6155997210c814681a5784f93044a48919d))
+
+- Record the declined kv.internal security-header proposal in the sentinel ledger
+  ([#1054](https://github.com/n24q02m/better-email-mcp/pull/1054),
+  [`7abce60`](https://github.com/n24q02m/better-email-mcp/commit/7abce60726c103d77e05db2e76e667e1cbbbfa12))
+
+- **deps**: Update @types/nodemailer to v8
+  ([#1004](https://github.com/n24q02m/better-email-mcp/pull/1004),
+  [`2fbfb66`](https://github.com/n24q02m/better-email-mcp/commit/2fbfb6686de276292e0ea6b5e2596536296ff945))
+
+- **deps**: Update actions/setup-node action to v7
+  ([#1024](https://github.com/n24q02m/better-email-mcp/pull/1024),
+  [`8864601`](https://github.com/n24q02m/better-email-mcp/commit/88646013160ea2560800ee223bf2a7edcf7e484c))
+
+- **deps**: Update marked to v18 ([#1005](https://github.com/n24q02m/better-email-mcp/pull/1005),
+  [`88c0657`](https://github.com/n24q02m/better-email-mcp/commit/88c0657117879f812f4e9ff1a92fbb8f69e4f86d))
+
+- **deps**: Update minor dependencies
+  ([#1048](https://github.com/n24q02m/better-email-mcp/pull/1048),
+  [`7cbde32`](https://github.com/n24q02m/better-email-mcp/commit/7cbde32458c321c93bbfc1311cb1e0d5c6db56d3))
+
+- **deps**: Update patch dependencies
+  ([#1047](https://github.com/n24q02m/better-email-mcp/pull/1047),
+  [`17bd9cd`](https://github.com/n24q02m/better-email-mcp/commit/17bd9cd888084b3c78d971e38f188b1493ee10c6))
+
+- **deps**: Update wrangler to ^4.112.0
+  ([#1050](https://github.com/n24q02m/better-email-mcp/pull/1050),
+  [`463d6d3`](https://github.com/n24q02m/better-email-mcp/commit/463d6d3521f8ef5c93c18e3a2b78559cb4a546f1))
+
+### Features
+
+- Make the Outlook tenant, scopes and OAuth domains configurable
+  ([#1053](https://github.com/n24q02m/better-email-mcp/pull/1053),
+  [`819fa51`](https://github.com/n24q02m/better-email-mcp/commit/819fa51c996f783da220a7d79757bbe55ca615f4))
+
+
 ## v1.37.0-beta.1 (2026-07-22)
 
 ### Bug Fixes
