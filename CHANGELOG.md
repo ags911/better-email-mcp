@@ -2,6 +2,19 @@
 
 <!-- version list -->
 
+## v1.37.0-beta.3 (2026-07-25)
+
+### Bug Fixes
+
+- Bump mcp-core to 1.21.0-beta.2 so credential errors reach the form
+  ([#1056](https://github.com/n24q02m/better-email-mcp/pull/1056),
+  [`ff3af3e`](https://github.com/n24q02m/better-email-mcp/commit/ff3af3eb1835848768827ef9e6060bf6cce2be0f))
+
+- Repair the live protocol harness so it can catch regressions again
+  ([#1055](https://github.com/n24q02m/better-email-mcp/pull/1055),
+  [`def882b`](https://github.com/n24q02m/better-email-mcp/commit/def882b7f79852a7c4e7e5b2dc51fad930c3c036))
+
+
 ## v1.37.0-beta.2 (2026-07-25)
 
 ### Bug Fixes
