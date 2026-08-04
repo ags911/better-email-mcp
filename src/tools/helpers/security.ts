@@ -19,12 +19,17 @@ const SAFETY_WARNING =
 
 /** Valid tool names for help documentation — prevents path traversal */
 const VALID_TOOL_NAMES = new Set(['messages', 'folders', 'attachments', 'send', 'config', 'help'])
+const MAX_SAFE_URL_LENGTH = 2048
 
 /**
  * Validates a URL to ensure it uses a safe protocol.
  * Prevents XSS attacks via javascript:, data:, vbscript:, etc.
  */
 export function isSafeUrl(url: string): boolean {
+  if (url.includes('\0') || url.length > MAX_SAFE_URL_LENGTH) {
+    return false
+  }
+
   try {
     // Try parsing as absolute URL
     const parsed = new URL(url)

@@ -178,7 +178,7 @@ async function sendRawMessage(
 ): Promise<{ messageId: string }> {
   // For OAuth2, ensure fresh token before creating transport
   if (account.authType === 'oauth2') {
-    await ensureValidToken(account)
+    await ensureValidToken(account, { allowInteractive: true })
   }
 
   const transport = createSmtpTransport(account)

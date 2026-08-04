@@ -29,6 +29,17 @@ export interface EmailSummary {
   snippet: string
 }
 
+export interface UnavailableAccount {
+  account_id: string
+  account_email: string
+  code: string
+  reason: string
+}
+
+export type SearchEmailResults = EmailSummary[] & {
+  unavailableAccounts?: UnavailableAccount[]
+}
+
 export interface EmailDetail {
   account_id: string
   account_email: string
@@ -86,7 +97,7 @@ function createClient(account: AccountConfig): ImapFlow {
  */
 async function withConnection<T>(account: AccountConfig, fn: (client: ImapFlow) => Promise<T>): Promise<T> {
   if (account.authType === 'oauth2') {
-    await ensureValidToken(account)
+    await ensureValidToken(account, { allowInteractive: false })
   }
 
   const client = createClient(account)
@@ -351,89 +362,154 @@ export async function appendToFolder(
 /**
  * Search emails across one or multiple accounts
  */
+function getErrorCode(error: unknown): string | null {
+  if (!error || typeof error !== 'object') {
+    return null
+  }
+
+  const code = (error as { code?: unknown }).code
+  return typeof code === 'string' ? code : null
+}
+
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error || typeof error === 'string') {
+    return String(error instanceof Error ? error.message : error)
+  }
+
+  try {
+    return JSON.stringify(error) ?? String(error)
+  } catch {
+    return String(error)
+  }
+}
+
+function sanitizeSearchErrorMessage(error: unknown): string {
+  const message = getErrorMessage(error).trim()
+  if (!message) return 'Unable to search this account.'
+
+  const sanitized = message
+    .replace(/\b[a-z][a-z0-9+.-]{1,31}:\/\/[^\s<>"']+/gi, '[redacted URL]')
+    .replace(/\b(?:device[-\s_]?code|user[-\s_]?code)\b(?:\s*[:=]\s*|\s+)?[^\s,;]+/gi, '[redacted OAuth code]')
+
+  return `Unable to search this account: ${sanitized}`
+}
+
+function getUnavailableAccount(account: AccountConfig, error: unknown): UnavailableAccount {
+  const code = getErrorCode(error)
+
+  if (code === 'OAUTH_AUTH_REQUIRED') {
+    return {
+      account_id: account.id,
+      account_email: account.email,
+      code,
+      reason: 'OAuth authentication required for this account.'
+    }
+  }
+
+  if (code === 'OAUTH_REFRESH_FAILED') {
+    return {
+      account_id: account.id,
+      account_email: account.email,
+      code,
+      reason: 'OAuth token refresh failed for this account.'
+    }
+  }
+
+  return {
+    account_id: account.id,
+    account_email: account.email,
+    code: 'IMAP_SEARCH_FAILED',
+    reason: sanitizeSearchErrorMessage(error)
+  }
+}
+
 export async function searchEmails(
   accounts: AccountConfig[],
   query: string,
   folder: string,
   limit: number
-): Promise<EmailSummary[]> {
+): Promise<SearchEmailResults> {
   const criteria = buildSearchCriteria(query)
 
-  const accountPromises = accounts.map(async (account) => {
-    try {
-      const emails = await withConnection(account, async (client) => {
-        const lock = await client.getMailboxLock(folder)
-        try {
-          // Step 1: search to get UIDs (fast — server-side filtering)
-          const allUids = await client.search(criteria, { uid: true })
+  const accountPromises = accounts.map(
+    async (
+      account
+    ): Promise<{
+      summaries: EmailSummary[]
+      unavailable?: UnavailableAccount
+    }> => {
+      try {
+        const emails = await withConnection(account, async (client) => {
+          const lock = await client.getMailboxLock(folder)
+          try {
+            // Step 1: search to get UIDs (fast — server-side filtering)
+            const allUids = await client.search(criteria, { uid: true })
 
-          if (!allUids || allUids.length === 0) return []
+            if (!allUids || allUids.length === 0) return []
 
-          // Step 2: take the most recent `limit` UIDs (highest UIDs = most recent)
-          const selectedUids = (allUids as number[]).slice(-limit)
+            // Step 2: take the most recent `limit` UIDs (highest UIDs = most recent)
+            const selectedUids = (allUids as number[]).slice(-limit)
 
-          // Step 3: fetch only those specific UIDs
-          return await client.fetchAll(
-            selectedUids,
-            {
-              uid: true,
-              flags: true,
-              envelope: true,
+            // Step 3: fetch only those specific UIDs
+            return await client.fetchAll(
+              selectedUids,
+              {
+                uid: true,
+                flags: true,
+                envelope: true,
 
-              source: { start: 0, maxLength: 512 }
-            },
-            { uid: true }
-          )
-        } finally {
-          lock.release()
-        }
-      })
+                source: { start: 0, maxLength: 512 }
+              },
+              { uid: true }
+            )
+          } finally {
+            lock.release()
+          }
+        })
 
-      // ⚡ Bolt: Execute CPU-intensive snippet extraction outside of the `withConnection` block.
-      // This ensures the IMAP connection and mailbox lock are released as quickly as possible.
-      // We use `mapLimit` with a concurrency of 5 instead of a sequential for...of loop or unbounded Promise.all
-      // to improve performance without blocking the event loop or causing memory spikes from CPU-heavy MIME parsing.
-      const summaries = await mapLimit(emails as FetchMessageObject[], 5, async (msg: FetchMessageObject) => {
-        const snippet = msg.source ? await extractSnippet(msg.source) : ''
+        // ⚡ Bolt: Execute CPU-intensive snippet extraction outside of the `withConnection` block.
+        // This ensures the IMAP connection and mailbox lock are released as quickly as possible.
+        // We use `mapLimit` with a concurrency of 5 instead of a sequential for...of loop or unbounded Promise.all
+        // to improve performance without blocking the event loop or causing memory spikes from CPU-heavy MIME parsing.
+        const summaries = await mapLimit(emails as FetchMessageObject[], 5, async (msg: FetchMessageObject) => {
+          const snippet = msg.source ? await extractSnippet(msg.source) : ''
 
+          return {
+            account_id: account.id,
+            account_email: account.email,
+            uid: msg.uid,
+            message_id: msg.envelope?.messageId,
+            subject: msg.envelope?.subject || '(No subject)',
+            from: msg.envelope?.from?.[0]
+              ? `${msg.envelope.from[0].name || ''} <${msg.envelope.from[0].address || ''}>`.trim()
+              : '',
+            to: msg.envelope?.to?.map((a) => a.address).join(', ') || '',
+            date: msg.envelope?.date?.toISOString() || '',
+            flags: Array.from((msg.flags as Set<string> | string[]) || []),
+            snippet
+          }
+        })
+
+        return { summaries }
+      } catch (error: unknown) {
         return {
-          account_id: account.id,
-          account_email: account.email,
-          uid: msg.uid,
-          message_id: msg.envelope?.messageId,
-          subject: msg.envelope?.subject || '(No subject)',
-          from: msg.envelope?.from?.[0]
-            ? `${msg.envelope.from[0].name || ''} <${msg.envelope.from[0].address || ''}>`.trim()
-            : '',
-          to: msg.envelope?.to?.map((a) => a.address).join(', ') || '',
-          date: msg.envelope?.date?.toISOString() || '',
-          flags: Array.from((msg.flags as Set<string> | string[]) || []),
-          snippet
+          summaries: [],
+          unavailable: getUnavailableAccount(account, error)
         }
-      })
-
-      return summaries
-    } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : String(error)
-      // Include error info but continue with other accounts
-      return [
-        {
-          account_id: account.id,
-          account_email: account.email,
-          uid: 0,
-          subject: `[ERROR] ${errorMessage}`,
-          from: '',
-          to: '',
-          date: '',
-          flags: [],
-          snippet: `Failed to search ${account.email}: ${errorMessage}`
-        }
-      ]
+      }
     }
+  )
+
+  const accountResults = await Promise.all(accountPromises)
+  const results = accountResults.flatMap(({ summaries }) => summaries) as SearchEmailResults
+  const unavailableAccounts = accountResults.flatMap(({ unavailable }) => (unavailable ? [unavailable] : []))
+
+  Object.defineProperty(results, 'unavailableAccounts', {
+    value: unavailableAccounts,
+    enumerable: false
   })
 
-  const resultsArrays = await Promise.all(accountPromises)
-  return resultsArrays.flat()
+  return results
 }
 
 /**

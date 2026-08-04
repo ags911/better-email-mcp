@@ -102,6 +102,22 @@ export interface OAuth2Tokens {
   clientId: string
 }
 
+export interface EnsureValidTokenOptions {
+  allowInteractive?: boolean
+}
+
+export type OAuth2AuthErrorCode = 'OAUTH_AUTH_REQUIRED' | 'OAUTH_REFRESH_FAILED'
+
+export class OAuth2AuthError extends Error {
+  constructor(
+    public readonly code: OAuth2AuthErrorCode,
+    message: string
+  ) {
+    super(message)
+    this.name = 'OAuth2AuthError'
+  }
+}
+
 interface TokenStore {
   [email: string]: OAuth2Tokens
 }
@@ -762,14 +778,32 @@ export async function initiateOutlookDeviceCode(
 /**
  * Ensure the account has a valid (non-expired) access token.
  *
- * If no tokens exist: initiates Device Code flow in the background and throws
- * an error containing the sign-in URL and code for the MCP client to display.
- * On retry, picks up tokens saved to disk by the background poll.
+ * Stored tokens are loaded when ``account.oauth2`` is absent. If no tokens are
+ * available, the default is non-interactive: no Device Code request,
+ * background poll, or browser launch is started. Instead, the function throws
+ * ``OAuth2AuthError`` with the stable ``OAUTH_AUTH_REQUIRED`` code. Pass
+ * ``{ allowInteractive: true }`` explicitly to start or resume the Device
+ * Code flow; that path may open the verification URL in a browser and throws
+ * sign-in instructions while the background poll runs. On a later retry, the
+ * function picks up tokens saved by that poll.
  *
- * If tokens exist but expired: refreshes automatically with 5-minute buffer.
- * Mutates account.oauth2 in place and persists to disk.
+ * If tokens exist but are expired or within the five-minute safety buffer, the
+ * access token is refreshed automatically. Refreshed tokens are persisted and
+ * ``account.oauth2`` is updated in place. A refresh failure throws
+ * ``OAuth2AuthError`` with the stable ``OAUTH_REFRESH_FAILED`` code.
+ *
+ * @param account Account whose OAuth2 token should be validated and updated.
+ * @param options Controls whether missing-token authentication may start the
+ *   interactive Device Code flow. Interactive authentication is disabled by
+ *   default.
+ * @throws ``OAuth2AuthError`` with ``OAUTH_AUTH_REQUIRED`` when authentication
+ *   is missing in non-interactive mode, or ``OAUTH_REFRESH_FAILED`` when token
+ *   refresh fails.
  */
-export async function ensureValidToken(account: { email: string; oauth2?: OAuth2Tokens }): Promise<string> {
+export async function ensureValidToken(
+  account: { email: string; oauth2?: OAuth2Tokens },
+  options: EnsureValidTokenOptions = {}
+): Promise<string> {
   // Try loading from disk (background auth may have saved tokens since last call)
   if (!account.oauth2) {
     const stored = await loadStoredTokens(account.email)
@@ -779,6 +813,10 @@ export async function ensureValidToken(account: { email: string; oauth2?: OAuth2
   }
 
   if (!account.oauth2) {
+    if (!options.allowInteractive) {
+      throw new OAuth2AuthError('OAUTH_AUTH_REQUIRED', 'OAuth authentication required for this account.')
+    }
+
     const emailKey = account.email.toLowerCase()
 
     // First, check KV for a pending device-code session that survived a
@@ -879,7 +917,12 @@ export async function ensureValidToken(account: { email: string; oauth2?: OAuth2
   }
 
   // Token expired or about to expire — refresh
-  const newTokens = await refreshAccessToken(account.oauth2.clientId, account.oauth2.refreshToken)
+  let newTokens: TokenResponse
+  try {
+    newTokens = await refreshAccessToken(account.oauth2.clientId, account.oauth2.refreshToken)
+  } catch {
+    throw new OAuth2AuthError('OAUTH_REFRESH_FAILED', 'OAuth token refresh failed; explicit authorization is required.')
+  }
 
   account.oauth2.accessToken = newTokens.access_token
   account.oauth2.expiresAt = now + newTokens.expires_in

@@ -180,15 +180,21 @@ describe('searchEmails', () => {
     expect(results[1]!.account_email).toBe('user2@gmail.com')
   })
 
-  it('includes error entry when account fails', async () => {
+  it('reports an unavailable account without returning a sentinel email', async () => {
     mockClient.connect.mockRejectedValue(new Error('Connection refused'))
 
     const results = await searchEmails([account], 'ALL', 'INBOX', 10)
 
-    expect(results).toHaveLength(1)
-    expect(results[0]!.uid).toBe(0)
-    expect(results[0]!.subject).toContain('[ERROR]')
-    expect(results[0]!.snippet).toContain('Connection refused')
+    expect(results).toHaveLength(0)
+    expect(results[0]).toBeUndefined()
+    expect(results.unavailableAccounts).toEqual([
+      {
+        account_id: account.id,
+        account_email: account.email,
+        code: 'IMAP_SEARCH_FAILED',
+        reason: 'Unable to search this account: Connection refused'
+      }
+    ])
   })
 
   it('handles empty search results', async () => {
@@ -264,7 +270,59 @@ describe('searchEmails', () => {
   it('handles non-Error objects in searchEmails catch block', async () => {
     mockClient.getMailboxLock.mockRejectedValueOnce('string error')
     const res = await searchEmails([account], 'ALL', 'INBOX', 1)
-    expect(res[0].subject).toBe('[ERROR] string error')
+    expect(res).toHaveLength(0)
+    expect(res.unavailableAccounts?.[0]).toMatchObject({
+      code: 'IMAP_SEARCH_FAILED',
+      reason: 'Unable to search this account: string error'
+    })
+  })
+
+  it('keeps generic diagnostics while removing URLs from unavailable account reason', async () => {
+    mockClient.getMailboxLock.mockRejectedValueOnce(
+      new Error('IMAP failed at https://imap.example.test/session with code DEVICE-CODE-123')
+    )
+
+    const res = await searchEmails([account], 'ALL', 'INBOX', 1)
+
+    expect(res).toHaveLength(0)
+    expect(res.unavailableAccounts?.[0]?.reason).toContain('IMAP failed')
+    expect(res.unavailableAccounts?.[0]?.reason).not.toContain('https://imap.example.test/session')
+    expect(res.unavailableAccounts?.[0]?.reason).not.toContain('DEVICE-CODE-123')
+  })
+
+  it('reports an unavailable OAuth account without returning a sentinel email', async () => {
+    const oauth2Account: AccountConfig = {
+      id: 'read_only_outlook_com',
+      email: 'read-only@outlook.com',
+      password: '',
+      authType: 'oauth2',
+      imap: { host: 'outlook.office365.com', port: 993, secure: true },
+      smtp: { host: 'smtp.office365.com', port: 587, secure: false },
+      oauth2: {
+        accessToken: 'access-token',
+        refreshToken: 'refresh-token',
+        expiresAt: Math.floor(Date.now() / 1000) + 3600,
+        clientId: 'client-id'
+      }
+    }
+    const authError = Object.assign(new Error('Outlook sign-in in progress. Visit https://example.test/code'), {
+      code: 'OAUTH_AUTH_REQUIRED'
+    })
+    vi.mocked(ensureValidToken).mockRejectedValueOnce(authError)
+
+    const results = await searchEmails([oauth2Account], 'ALL', 'INBOX', 10)
+    const unavailableAccounts = (results as any).unavailableAccounts
+
+    expect(results).toHaveLength(0)
+    expect(results[0]).toBeUndefined()
+    expect(unavailableAccounts).toHaveLength(1)
+    expect(unavailableAccounts[0]).toMatchObject({
+      account_id: 'read_only_outlook_com',
+      account_email: 'read-only@outlook.com',
+      code: 'OAUTH_AUTH_REQUIRED'
+    })
+    expect(unavailableAccounts[0].reason).not.toContain('https://')
+    expect(ensureValidToken).toHaveBeenCalledWith(oauth2Account, { allowInteractive: false })
   })
 
   it('handles missing from name in search summaries', async () => {
@@ -1183,7 +1241,7 @@ describe('OAuth2 IMAP authentication', () => {
 
     await listFolders(oauth2Account)
 
-    expect(ensureValidToken).toHaveBeenCalledWith(oauth2Account)
+    expect(ensureValidToken).toHaveBeenCalledWith(oauth2Account, { allowInteractive: false })
   })
 
   it('creates ImapFlow with accessToken for OAuth2 accounts', async () => {

@@ -96,7 +96,8 @@ async function handleSearch(accounts: AccountConfig[], input: MessagesInput): Pr
     folder,
     total: results.length,
     accounts_searched: targetAccounts.map((a) => a.email),
-    messages: results
+    messages: results,
+    unavailable_accounts: results.unavailableAccounts ?? []
   }
 }
 

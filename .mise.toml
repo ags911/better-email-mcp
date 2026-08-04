@@ -9,9 +9,6 @@ bun = "latest"
 uv = "latest"
 python = "3.13"
 
-[settings]
-trusted_config_paths = ["."]
-
 [env]
 UV_LINK_MODE = "copy"
 

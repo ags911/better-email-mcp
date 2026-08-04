@@ -63,6 +63,16 @@ describe('PerSubCredStore', () => {
     expect(await cold.load('mal')).toBeNull()
   })
 
+  it('rejects an account with an unsupported authType on load', async () => {
+    const http = new FakeKvHttp()
+    await new PerSubCredStore({ http }).save('invalid-auth-type', {
+      accounts: [{ ...acct('a@example.com'), authType: 'saml' }]
+    })
+
+    const cold = new PerSubCredStore({ http })
+    expect(await cold.load('invalid-auth-type')).toBeNull()
+  })
+
   it('serves the in-memory cache after a save (no cold round-trip needed)', async () => {
     const store = new PerSubCredStore({ http: new FakeKvHttp() })
     await store.save('alice', { accounts: [acct('a@example.com')] })

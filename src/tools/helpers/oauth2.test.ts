@@ -448,6 +448,31 @@ describe('ensureValidToken', () => {
     expect(account.oauth2).toEqual(stored)
   })
 
+  it('does not start interactive auth for a default token check', async () => {
+    const store = new InMemoryCredStore()
+    const loadSpy = vi.spyOn(store, 'load')
+    const saveSpy = vi.spyOn(store, 'save')
+    setOutlookTokenStore(store)
+    _getPendingAuths().clear()
+
+    const account = { email: 'read-only@outlook.com' } as { email: string; oauth2?: OAuth2Tokens }
+
+    try {
+      await expect(
+        subjectContext.run({ sub: 'read-only-sub', accounts: [] }, () => ensureValidToken(account))
+      ).rejects.toMatchObject({ code: 'OAUTH_AUTH_REQUIRED' })
+
+      expect(mockFetch).not.toHaveBeenCalled()
+      expect(mockTryOpenBrowser).not.toHaveBeenCalled()
+      expect(_getPendingAuths()).not.toHaveProperty('read-only@outlook.com')
+      expect(loadSpy).toHaveBeenCalledTimes(1)
+      expect(saveSpy).not.toHaveBeenCalled()
+    } finally {
+      setOutlookTokenStore(null)
+      _getPendingAuths().clear()
+    }
+  })
+
   it('initiates Device Code flow when no tokens exist', async () => {
     // No tokens on disk
     mockReadFileSync.mockReturnValue('{}')
@@ -465,8 +490,8 @@ describe('ensureValidToken', () => {
 
     const account = { email: 'user@outlook.com' } as { email: string; oauth2?: OAuth2Tokens }
 
-    await expect(ensureValidToken(account)).rejects.toThrow('AUTO-CODE')
-    await expect(ensureValidToken(account)).rejects.toThrow('microsoft.com/devicelogin')
+    await expect(ensureValidToken(account, { allowInteractive: true })).rejects.toThrow('AUTO-CODE')
+    await expect(ensureValidToken(account, { allowInteractive: true })).rejects.toThrow('microsoft.com/devicelogin')
 
     // Clean up pending auth
     _getPendingAuths().clear()
@@ -487,7 +512,7 @@ describe('ensureValidToken', () => {
 
     const account = { email: 'browser@outlook.com' } as { email: string; oauth2?: OAuth2Tokens }
 
-    await expect(ensureValidToken(account)).rejects.toThrow('BROWSER-CODE')
+    await expect(ensureValidToken(account, { allowInteractive: true })).rejects.toThrow('BROWSER-CODE')
 
     // Verify mcp-core's tryOpenBrowser was called with the verification URI
     expect(mockTryOpenBrowser).toHaveBeenCalledTimes(1)
@@ -512,13 +537,13 @@ describe('ensureValidToken', () => {
     const account = { email: 'nodup@outlook.com' } as { email: string; oauth2?: OAuth2Tokens }
 
     // First call: opens browser via mcp-core
-    await expect(ensureValidToken(account)).rejects.toThrow('NODUP-CODE')
+    await expect(ensureValidToken(account, { allowInteractive: true })).rejects.toThrow('NODUP-CODE')
     expect(mockTryOpenBrowser).toHaveBeenCalledTimes(1)
 
     // Second call: reuses pending auth, oauth2.ts short-circuits before
     // calling tryOpenBrowser, so mcp-core helper is not invoked again.
     mockTryOpenBrowser.mockClear()
-    await expect(ensureValidToken(account)).rejects.toThrow('NODUP-CODE')
+    await expect(ensureValidToken(account, { allowInteractive: true })).rejects.toThrow('NODUP-CODE')
     expect(mockTryOpenBrowser).not.toHaveBeenCalled()
 
     _getPendingAuths().clear()
@@ -541,11 +566,11 @@ describe('ensureValidToken', () => {
     const account = { email: 'retry@outlook.com' } as { email: string; oauth2?: OAuth2Tokens }
 
     // First call initiates flow
-    await expect(ensureValidToken(account)).rejects.toThrow('FIRST-CODE')
+    await expect(ensureValidToken(account, { allowInteractive: true })).rejects.toThrow('FIRST-CODE')
 
     // Second call should reuse same code, no new fetch
     const fetchCountBefore = mockFetch.mock.calls.length
-    await expect(ensureValidToken(account)).rejects.toThrow('FIRST-CODE')
+    await expect(ensureValidToken(account, { allowInteractive: true })).rejects.toThrow('FIRST-CODE')
     // No additional device code fetch (only background poll may have fired)
     expect(mockFetch.mock.calls.length - fetchCountBefore).toBeLessThanOrEqual(1)
 
@@ -574,6 +599,24 @@ describe('ensureValidToken', () => {
     await ensureValidToken(account)
 
     expect(account.oauth2.refreshToken).toBe('keep-this-rt')
+  })
+
+  it('returns a stable error code when refresh fails', async () => {
+    const account = {
+      email: 'refresh-failed@outlook.com',
+      oauth2: {
+        accessToken: 'expired',
+        refreshToken: 'bad-refresh-token',
+        expiresAt: 1,
+        clientId: 'cid'
+      }
+    }
+    mockFetch.mockRejectedValue(new Error('network details should not escape'))
+
+    await expect(ensureValidToken(account)).rejects.toMatchObject({
+      name: 'OAuth2AuthError',
+      code: 'OAUTH_REFRESH_FAILED'
+    })
   })
 })
 
@@ -1084,7 +1127,7 @@ describe('openBrowser delegates to mcp-core', () => {
 
     const account = { email: 'sec@outlook.com' } as { email: string; oauth2?: OAuth2Tokens }
 
-    await expect(ensureValidToken(account)).rejects.toThrow('SEC-CODE')
+    await expect(ensureValidToken(account, { allowInteractive: true })).rejects.toThrow('SEC-CODE')
 
     // mcp-core's tryOpenBrowser is responsible for URL canonicalisation and
     // shell-injection protection (it uses execFile with argument arrays).
@@ -1109,7 +1152,7 @@ describe('openBrowser delegates to mcp-core', () => {
 
     const account = { email: 'proto@outlook.com' } as { email: string; oauth2?: OAuth2Tokens }
 
-    await expect(ensureValidToken(account)).rejects.toThrow('PROTO-CODE')
+    await expect(ensureValidToken(account, { allowInteractive: true })).rejects.toThrow('PROTO-CODE')
 
     // oauth2.ts now filters protocols via isSafeUrl before delegating to mcp-core.tryOpenBrowser.
     // We verify that the call is intercepted and tryOpenBrowser is not called.
@@ -1134,7 +1177,7 @@ describe('openBrowser delegates to mcp-core', () => {
 
     const account = { email: 'hyphen@outlook.com' } as { email: string; oauth2?: OAuth2Tokens }
 
-    await expect(ensureValidToken(account)).rejects.toThrow('HYPHEN-CODE')
+    await expect(ensureValidToken(account, { allowInteractive: true })).rejects.toThrow('HYPHEN-CODE')
 
     expect(mockTryOpenBrowser).toHaveBeenCalledWith(hyphenUri)
 

@@ -109,6 +109,17 @@ describe('isSafeUrl', () => {
   it('blocks URLs with null bytes in protocol (XPIA vector)', () => {
     expect(isSafeUrl('ht\0tp://example.com')).toBe(false)
   })
+
+  it('blocks null bytes that URL parsing would otherwise normalize in the path (XPIA vector)', () => {
+    expect(isSafeUrl(`https://example.com/path${String.fromCharCode(0)}`)).toBe(false)
+  })
+
+  it('blocks URLs longer than 2048 characters before parsing', () => {
+    const longUrl = `https://example.com/${'a'.repeat(2048)}`
+
+    expect(longUrl.length).toBeGreaterThan(2048)
+    expect(isSafeUrl(longUrl)).toBe(false)
+  })
 })
 
 // ============================================================================

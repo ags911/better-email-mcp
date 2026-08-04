@@ -458,10 +458,10 @@ describe('OAuth2 SMTP authentication', () => {
     }
   }
 
-  it('calls ensureValidToken before sending for OAuth2 accounts', async () => {
+  it('allows interactive OAuth authentication before explicit SMTP sends', async () => {
     await sendNewEmail(oauth2Account, { to: 'r@test.com', subject: 'T', body: 'B' })
 
-    expect(ensureValidToken).toHaveBeenCalledWith(oauth2Account)
+    expect(ensureValidToken).toHaveBeenCalledWith(oauth2Account, { allowInteractive: true })
   })
 
   it('creates transport with OAuth2 auth for Outlook accounts', async () => {

@@ -59,6 +59,40 @@ describe('messages - search', () => {
     expect(mockSearchEmails).toHaveBeenCalledWith(accounts, 'UNSEEN', 'INBOX', 20)
   })
 
+  it('returns real messages and unavailable account status without counting failures', async () => {
+    const message = {
+      account_id: 'user1_gmail_com',
+      account_email: 'user1@gmail.com',
+      uid: 42,
+      subject: 'Real message',
+      from: 'sender@example.com',
+      to: 'user1@gmail.com',
+      date: '2026-08-04T00:00:00.000Z',
+      flags: [],
+      snippet: 'Message body'
+    }
+    const searchResult = [message] as any
+    Object.defineProperty(searchResult, 'unavailableAccounts', {
+      value: [
+        {
+          account_id: 'user2_outlook_com',
+          account_email: 'user2@outlook.com',
+          code: 'OAUTH_AUTH_REQUIRED',
+          reason: 'OAuth authentication required for this account.'
+        }
+      ],
+      enumerable: false
+    })
+    mockSearchEmails.mockResolvedValue(searchResult as any)
+
+    const result = await messages(accounts, { action: 'search', query: 'ALL' })
+
+    expect(result.total).toBe(1)
+    expect(result.messages).toEqual([message])
+    expect(result.messages.some((item: { uid: number }) => item.uid === 0)).toBe(false)
+    expect(result.unavailable_accounts).toEqual(searchResult.unavailableAccounts)
+  })
+
   it('filters by account when specified', async () => {
     mockSearchEmails.mockResolvedValue([])
 
