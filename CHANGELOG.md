@@ -2,6 +2,22 @@
 
 <!-- version list -->
 
+## v1.38.2 (2026-08-11)
+
+### Bug Fixes
+
+- **deps**: Lock file maintenance ([#1119](https://github.com/n24q02m/better-email-mcp/pull/1119),
+  [`def6d80`](https://github.com/n24q02m/better-email-mcp/commit/def6d8099043c1bcaa2f7be1f25e3b824a9945f3))
+
+- **deps**: Update minor dependencies
+  ([#1118](https://github.com/n24q02m/better-email-mcp/pull/1118),
+  [`aeffe80`](https://github.com/n24q02m/better-email-mcp/commit/aeffe80e5663ef04cd47421650cd4ef35802cc8d))
+
+- **deps**: Update patch dependencies
+  ([#1117](https://github.com/n24q02m/better-email-mcp/pull/1117),
+  [`1f9ce8a`](https://github.com/n24q02m/better-email-mcp/commit/1f9ce8a7d82b8f4e876523f6722ec530ca4cd07c))
+
+
 ## v1.38.1 (2026-08-11)
 
 ### Bug Fixes
