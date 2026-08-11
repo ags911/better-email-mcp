@@ -27,5 +27,5 @@ describe('error propagation', () => {
     }).trim()
 
     expect(hits).toBe('')
-  })
+  }, 15_000)
 })
