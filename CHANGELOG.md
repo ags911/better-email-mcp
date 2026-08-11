@@ -2,6 +2,27 @@
 
 <!-- version list -->
 
+## v1.38.1 (2026-08-11)
+
+### Bug Fixes
+
+- Align email mcp core dependency ([#1116](https://github.com/n24q02m/better-email-mcp/pull/1116),
+  [`b94ff33`](https://github.com/n24q02m/better-email-mcp/commit/b94ff33a0c33a8b8cf7fee4a8cb6f196ef371aab))
+
+- Align email skills with messages tool
+  ([`9f639ea`](https://github.com/n24q02m/better-email-mcp/commit/9f639ea8d55865786190caa009f18829905ac895))
+
+- Cover email backlog regression paths
+  ([#1116](https://github.com/n24q02m/better-email-mcp/pull/1116),
+  [`b94ff33`](https://github.com/n24q02m/better-email-mcp/commit/b94ff33a0c33a8b8cf7fee4a8cb6f196ef371aab))
+
+- Format error propagation test ([#1116](https://github.com/n24q02m/better-email-mcp/pull/1116),
+  [`b94ff33`](https://github.com/n24q02m/better-email-mcp/commit/b94ff33a0c33a8b8cf7fee4a8cb6f196ef371aab))
+
+- Support MCP client SDK compatibility
+  ([`f243f09`](https://github.com/n24q02m/better-email-mcp/commit/f243f0996c1c61bae9acb788e92af78cb4669e36))
+
+
 ## v1.38.0 (2026-08-11)
 
 ### Bug Fixes
