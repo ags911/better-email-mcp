@@ -2,6 +2,227 @@
 
 <!-- version list -->
 
+## v1.38.0 (2026-08-11)
+
+### Bug Fixes
+
+- Align IMAP fixture mailbox UID bounds
+  ([#1113](https://github.com/n24q02m/better-email-mcp/pull/1113),
+  [`3e645a8`](https://github.com/n24q02m/better-email-mcp/commit/3e645a8ed8684d92fb75b515e03e737118123a20))
+
+- Align protocol E2E harness with runtime
+  ([#1113](https://github.com/n24q02m/better-email-mcp/pull/1113),
+  [`3e645a8`](https://github.com/n24q02m/better-email-mcp/commit/3e645a8ed8684d92fb75b515e03e737118123a20))
+
+- Bound IMAP searches by UID windows
+  ([#1113](https://github.com/n24q02m/better-email-mcp/pull/1113),
+  [`3e645a8`](https://github.com/n24q02m/better-email-mcp/commit/3e645a8ed8684d92fb75b515e03e737118123a20))
+
+- Bound large mailbox fallback searches
+  ([#1113](https://github.com/n24q02m/better-email-mcp/pull/1113),
+  [`3e645a8`](https://github.com/n24q02m/better-email-mcp/commit/3e645a8ed8684d92fb75b515e03e737118123a20))
+
+- Bound large mailbox search results before fetching messages
+  ([#1113](https://github.com/n24q02m/better-email-mcp/pull/1113),
+  [`3e645a8`](https://github.com/n24q02m/better-email-mcp/commit/3e645a8ed8684d92fb75b515e03e737118123a20))
+
+- Bound worker request URLs ([#1113](https://github.com/n24q02m/better-email-mcp/pull/1113),
+  [`3e645a8`](https://github.com/n24q02m/better-email-mcp/commit/3e645a8ed8684d92fb75b515e03e737118123a20))
+
+- Build cli before protocol coverage
+  ([#1113](https://github.com/n24q02m/better-email-mcp/pull/1113),
+  [`3e645a8`](https://github.com/n24q02m/better-email-mcp/commit/3e645a8ed8684d92fb75b515e03e737118123a20))
+
+- Complete better email backlog ([#1113](https://github.com/n24q02m/better-email-mcp/pull/1113),
+  [`3e645a8`](https://github.com/n24q02m/better-email-mcp/commit/3e645a8ed8684d92fb75b515e03e737118123a20))
+
+- Cover non-interactive account-wide OAuth search
+  ([#1113](https://github.com/n24q02m/better-email-mcp/pull/1113),
+  [`3e645a8`](https://github.com/n24q02m/better-email-mcp/commit/3e645a8ed8684d92fb75b515e03e737118123a20))
+
+- Document user-level mise trust configuration
+  ([#1113](https://github.com/n24q02m/better-email-mcp/pull/1113),
+  [`3e645a8`](https://github.com/n24q02m/better-email-mcp/commit/3e645a8ed8684d92fb75b515e03e737118123a20))
+
+- Drop code_quality from the main ruleset
+  ([#1059](https://github.com/n24q02m/better-email-mcp/pull/1059),
+  [`839936e`](https://github.com/n24q02m/better-email-mcp/commit/839936ec8498d81f4f8b9e1d6221461a29474189))
+
+- Exercise production non-interactive account search auth
+  ([#1113](https://github.com/n24q02m/better-email-mcp/pull/1113),
+  [`3e645a8`](https://github.com/n24q02m/better-email-mcp/commit/3e645a8ed8684d92fb75b515e03e737118123a20))
+
+- Expose stdio harness failures ([#1113](https://github.com/n24q02m/better-email-mcp/pull/1113),
+  [`3e645a8`](https://github.com/n24q02m/better-email-mcp/commit/3e645a8ed8684d92fb75b515e03e737118123a20))
+
+- Harden email auth and account error reporting
+  ([`f3aa048`](https://github.com/n24q02m/better-email-mcp/commit/f3aa0488ef184e758e924d036ed1890ef50494c0))
+
+- Harden mailbox UID validation ([#1113](https://github.com/n24q02m/better-email-mcp/pull/1113),
+  [`3e645a8`](https://github.com/n24q02m/better-email-mcp/commit/3e645a8ed8684d92fb75b515e03e737118123a20))
+
+- Load mcp-core contract before test timeout
+  ([#1113](https://github.com/n24q02m/better-email-mcp/pull/1113),
+  [`3e645a8`](https://github.com/n24q02m/better-email-mcp/commit/3e645a8ed8684d92fb75b515e03e737118123a20))
+
+- Move this repo to Apache-2.0, preserving the MIT terms it received
+  ([#1082](https://github.com/n24q02m/better-email-mcp/pull/1082),
+  [`c86d23f`](https://github.com/n24q02m/better-email-mcp/commit/c86d23f009368e7f2b4c71ddc6f4d8691fb27b65))
+
+- Preserve paired HTML sanitization tags
+  ([#1113](https://github.com/n24q02m/better-email-mcp/pull/1113),
+  [`3e645a8`](https://github.com/n24q02m/better-email-mcp/commit/3e645a8ed8684d92fb75b515e03e737118123a20))
+
+- Preserve underlying cause in operation errors instead of a generic message
+  ([#1113](https://github.com/n24q02m/better-email-mcp/pull/1113),
+  [`3e645a8`](https://github.com/n24q02m/better-email-mcp/commit/3e645a8ed8684d92fb75b515e03e737118123a20))
+
+- Record Task 2 UID window verification
+  ([#1113](https://github.com/n24q02m/better-email-mcp/pull/1113),
+  [`3e645a8`](https://github.com/n24q02m/better-email-mcp/commit/3e645a8ed8684d92fb75b515e03e737118123a20))
+
+- Reject control characters in safe URLs
+  ([#1113](https://github.com/n24q02m/better-email-mcp/pull/1113),
+  [`3e645a8`](https://github.com/n24q02m/better-email-mcp/commit/3e645a8ed8684d92fb75b515e03e737118123a20))
+
+- Remove stray Task 2 report committed at repo root
+  ([#1113](https://github.com/n24q02m/better-email-mcp/pull/1113),
+  [`3e645a8`](https://github.com/n24q02m/better-email-mcp/commit/3e645a8ed8684d92fb75b515e03e737118123a20))
+
+- Replace personal deploy host in README with self-host placeholder
+  ([`9caa9a2`](https://github.com/n24q02m/better-email-mcp/commit/9caa9a2d15cd3c60a9881263fd2ad6e3bef0f8be))
+
+- Run full live suite with live vitest config
+  ([#1113](https://github.com/n24q02m/better-email-mcp/pull/1113),
+  [`3e645a8`](https://github.com/n24q02m/better-email-mcp/commit/3e645a8ed8684d92fb75b515e03e737118123a20))
+
+- Satisfy biome import ordering ([#1113](https://github.com/n24q02m/better-email-mcp/pull/1113),
+  [`3e645a8`](https://github.com/n24q02m/better-email-mcp/commit/3e645a8ed8684d92fb75b515e03e737118123a20))
+
+- Stabilize CI governance and stdio harness
+  ([#1113](https://github.com/n24q02m/better-email-mcp/pull/1113),
+  [`3e645a8`](https://github.com/n24q02m/better-email-mcp/commit/3e645a8ed8684d92fb75b515e03e737118123a20))
+
+- Stabilize protocol integration test timeouts
+  ([#1113](https://github.com/n24q02m/better-email-mcp/pull/1113),
+  [`3e645a8`](https://github.com/n24q02m/better-email-mcp/commit/3e645a8ed8684d92fb75b515e03e737118123a20))
+
+- Use resolved runtime for protocol contract test
+  ([#1113](https://github.com/n24q02m/better-email-mcp/pull/1113),
+  [`3e645a8`](https://github.com/n24q02m/better-email-mcp/commit/3e645a8ed8684d92fb75b515e03e737118123a20))
+
+- Validate ESEARCH partial results before fallback
+  ([#1113](https://github.com/n24q02m/better-email-mcp/pull/1113),
+  [`3e645a8`](https://github.com/n24q02m/better-email-mcp/commit/3e645a8ed8684d92fb75b515e03e737118123a20))
+
+- Validate optional IMAP host and port fields
+  ([#1113](https://github.com/n24q02m/better-email-mcp/pull/1113),
+  [`3e645a8`](https://github.com/n24q02m/better-email-mcp/commit/3e645a8ed8684d92fb75b515e03e737118123a20))
+
+- Validate optional IMAP host and port fields
+  ([#1091](https://github.com/n24q02m/better-email-mcp/pull/1091),
+  [`90f4374`](https://github.com/n24q02m/better-email-mcp/commit/90f4374c89afcb4276c172960e3031df1be110ac))
+
+- **deps**: Update @biomejs/biome to ^2.5.5
+  ([#1069](https://github.com/n24q02m/better-email-mcp/pull/1069),
+  [`da41341`](https://github.com/n24q02m/better-email-mcp/commit/da413413af422331f5294b3aade0ee6aa7ee6787))
+
+- **deps**: Update @biomejs/biome to ^2.5.6
+  ([#1113](https://github.com/n24q02m/better-email-mcp/pull/1113),
+  [`3e645a8`](https://github.com/n24q02m/better-email-mcp/commit/3e645a8ed8684d92fb75b515e03e737118123a20))
+
+- **deps**: Update @biomejs/biome to ^2.5.6
+  ([#1093](https://github.com/n24q02m/better-email-mcp/pull/1093),
+  [`3258cca`](https://github.com/n24q02m/better-email-mcp/commit/3258cca57bd2396dc2d79ca25050044268465d46))
+
+- **deps**: Update @types/node to ^26.1.2
+  ([#1089](https://github.com/n24q02m/better-email-mcp/pull/1089),
+  [`c0a80d1`](https://github.com/n24q02m/better-email-mcp/commit/c0a80d108662b9d222cd83142d51d683b3cd1d80))
+
+- **deps**: Update actions/checkout action to v7.0.1
+  ([#1065](https://github.com/n24q02m/better-email-mcp/pull/1065),
+  [`10c7960`](https://github.com/n24q02m/better-email-mcp/commit/10c7960799fc28ee4b8a57ab1101eaf02f32e296))
+
+- **deps**: Update actions/setup-python action to v7
+  ([#1060](https://github.com/n24q02m/better-email-mcp/pull/1060),
+  [`2649a68`](https://github.com/n24q02m/better-email-mcp/commit/2649a68efaf9bd88bc59c7331dc447f9093f48dd))
+
+- **deps**: Update n24q02m/better-semantic-release action to v1.2.3
+  ([#1084](https://github.com/n24q02m/better-email-mcp/pull/1084),
+  [`c734813`](https://github.com/n24q02m/better-email-mcp/commit/c734813203318468c6bc3c73f5bc580aabd7de3f))
+
+- **deps**: Update tsx to ^4.23.5 ([#1108](https://github.com/n24q02m/better-email-mcp/pull/1108),
+  [`d49d0a1`](https://github.com/n24q02m/better-email-mcp/commit/d49d0a1816eaa4278d326bd9b3ab1b598a647450))
+
+- **deps**: Update wrangler to ^4.113.0
+  ([#1070](https://github.com/n24q02m/better-email-mcp/pull/1070),
+  [`db58db7`](https://github.com/n24q02m/better-email-mcp/commit/db58db795efe76ee0a973b979d943be7778e323a))
+
+- **deps**: Update wrangler to ^4.114.0
+  ([#1074](https://github.com/n24q02m/better-email-mcp/pull/1074),
+  [`6638f88`](https://github.com/n24q02m/better-email-mcp/commit/6638f887eeafffcb554071f0db060b9d1236ba90))
+
+- **deps**: Update wrangler to ^4.115.0
+  ([#1113](https://github.com/n24q02m/better-email-mcp/pull/1113),
+  [`3e645a8`](https://github.com/n24q02m/better-email-mcp/commit/3e645a8ed8684d92fb75b515e03e737118123a20))
+
+- **deps**: Update wrangler to ^4.115.0
+  ([#1096](https://github.com/n24q02m/better-email-mcp/pull/1096),
+  [`d48facc`](https://github.com/n24q02m/better-email-mcp/commit/d48facc07030ffcc4e5202515ad82267ce4bf468))
+
+- **deps**: Update wrangler to ^4.116.0
+  ([#1113](https://github.com/n24q02m/better-email-mcp/pull/1113),
+  [`3e645a8`](https://github.com/n24q02m/better-email-mcp/commit/3e645a8ed8684d92fb75b515e03e737118123a20))
+
+- **deps**: Update wrangler to ^4.116.0
+  ([#1099](https://github.com/n24q02m/better-email-mcp/pull/1099),
+  [`c79eec4`](https://github.com/n24q02m/better-email-mcp/commit/c79eec43cdea8d5ebf71c83e3c29d02614d0085b))
+
+- **deps**: Update wrangler to ^4.118.0
+  ([#1113](https://github.com/n24q02m/better-email-mcp/pull/1113),
+  [`3e645a8`](https://github.com/n24q02m/better-email-mcp/commit/3e645a8ed8684d92fb75b515e03e737118123a20))
+
+- **deps**: Update wrangler to ^4.118.0
+  ([#1102](https://github.com/n24q02m/better-email-mcp/pull/1102),
+  [`47d1c3a`](https://github.com/n24q02m/better-email-mcp/commit/47d1c3a5ebda432dcb47676a837d59d8780082c4))
+
+### Features
+
+- Add bot governance workflow ([#1113](https://github.com/n24q02m/better-email-mcp/pull/1113),
+  [`3e645a8`](https://github.com/n24q02m/better-email-mcp/commit/3e645a8ed8684d92fb75b515e03e737118123a20))
+
+- Add inline regex validation to optional imap fields
+  ([#1113](https://github.com/n24q02m/better-email-mcp/pull/1113),
+  [`3e645a8`](https://github.com/n24q02m/better-email-mcp/commit/3e645a8ed8684d92fb75b515e03e737118123a20))
+
+- Add inline regex validation to optional imap fields
+  ([#1091](https://github.com/n24q02m/better-email-mcp/pull/1091),
+  [`90f4374`](https://github.com/n24q02m/better-email-mcp/commit/90f4374c89afcb4276c172960e3031df1be110ac))
+
+- Add inline regex validation to optional imap host and port fields
+  ([#1113](https://github.com/n24q02m/better-email-mcp/pull/1113),
+  [`3e645a8`](https://github.com/n24q02m/better-email-mcp/commit/3e645a8ed8684d92fb75b515e03e737118123a20))
+
+- Add inline regex validation to optional imap host and port fields
+  ([#1091](https://github.com/n24q02m/better-email-mcp/pull/1091),
+  [`90f4374`](https://github.com/n24q02m/better-email-mcp/commit/90f4374c89afcb4276c172960e3031df1be110ac))
+
+- Merge outbound actions into messages tool
+  ([#1113](https://github.com/n24q02m/better-email-mcp/pull/1113),
+  [`3e645a8`](https://github.com/n24q02m/better-email-mcp/commit/3e645a8ed8684d92fb75b515e03e737118123a20))
+
+- Sync cross-promo section ([#1063](https://github.com/n24q02m/better-email-mcp/pull/1063),
+  [`c636ed7`](https://github.com/n24q02m/better-email-mcp/commit/c636ed7cba61a12e64f707b10d82dd1c9d5267e7))
+
+- 🎨 palette: add inline regex validation to optional imap host and port fields
+  ([#1113](https://github.com/n24q02m/better-email-mcp/pull/1113),
+  [`3e645a8`](https://github.com/n24q02m/better-email-mcp/commit/3e645a8ed8684d92fb75b515e03e737118123a20))
+
+- 🎨 palette: add inline regex validation to optional imap host and port fields
+  ([#1091](https://github.com/n24q02m/better-email-mcp/pull/1091),
+  [`90f4374`](https://github.com/n24q02m/better-email-mcp/commit/90f4374c89afcb4276c172960e3031df1be110ac))
+
+
 ## Unreleased
 
 ### Breaking Changes
