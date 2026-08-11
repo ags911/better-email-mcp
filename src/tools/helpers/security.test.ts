@@ -114,6 +114,10 @@ describe('isSafeUrl', () => {
     expect(isSafeUrl(`https://example.com/path${String.fromCharCode(0)}`)).toBe(false)
   })
 
+  it.each([1, 9, 10, 13, 31, 127])('blocks control characters in an allowed URL', (code) => {
+    expect(isSafeUrl(`https://example.com/path${String.fromCharCode(code)}`)).toBe(false)
+  })
+
   it('blocks URLs longer than 2048 characters before parsing', () => {
     const longUrl = `https://example.com/${'a'.repeat(2048)}`
 
@@ -131,7 +135,7 @@ describe('isValidToolName', () => {
     expect(isValidToolName('messages')).toBe(true)
     expect(isValidToolName('folders')).toBe(true)
     expect(isValidToolName('attachments')).toBe(true)
-    expect(isValidToolName('send')).toBe(true)
+    expect(isValidToolName('send')).toBe(false)
     expect(isValidToolName('help')).toBe(true)
   })
 
@@ -173,7 +177,7 @@ describe('wrapToolResult', () => {
 
   it('does not wrap safe tools', () => {
     expect(wrapToolResult('folders', '{"folders": []}')).toBe('{"folders": []}')
-    expect(wrapToolResult('send', '{"success": true}')).toBe('{"success": true}')
+    expect(wrapToolResult('config', '{"success": true}')).toBe('{"success": true}')
     expect(wrapToolResult('help', '{"docs": ""}')).toBe('{"docs": ""}')
   })
 })
@@ -199,7 +203,6 @@ describe('markStructuredContent', () => {
   it('does not add a marker for non-external tools', () => {
     const payload = { success: true }
     expect(markStructuredContent('folders', payload)).toEqual(payload)
-    expect(markStructuredContent('send', payload)).toEqual(payload)
     expect(markStructuredContent('config', payload)).toEqual(payload)
     expect(markStructuredContent('help', payload)).toEqual(payload)
   })

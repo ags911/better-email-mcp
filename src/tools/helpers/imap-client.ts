@@ -159,6 +159,8 @@ const RE_WHITESPACE = /\s+/g
 // in this frequently executed query parsing hot path.
 const DATE_KEYWORDS = ['SINCE', 'BEFORE'] as const
 const KV_KEYWORDS = ['FROM', 'TO'] as const
+const UID_SEARCH_WINDOW_SIZE = 500
+const RE_UID_SEQUENCE_SET = /^\d+(?::\d+)?(?:,\d+(?::\d+)?)*$/
 
 function buildSearchCriteria(query: string): SearchObject {
   const trimmed = query.trim()
@@ -223,6 +225,146 @@ function buildSearchCriteria(query: string): SearchObject {
   }
 
   return Object.keys(criteria).length > 0 ? criteria : {}
+}
+
+/**
+ * ESEARCH (RFC 4731) is folded into the IMAP4rev2 baseline, so rev2-only
+ * servers often don't list it as a standalone capability string -- imapflow's
+ * own internal capability check applies the same fallback (see
+ * node_modules/imapflow/lib/tools.js hasCapability / IMAP4REV2_FOLDED_CAPABILITIES).
+ * Mirroring that here means rev2 servers still get the single-round-trip
+ * ESEARCH/PARTIAL fast path instead of always paying for windowed UID SEARCH.
+ */
+function hasEsearchCapability(client: ImapFlow): boolean {
+  if (client.capabilities.has('ESEARCH')) return true
+  return (
+    client.enabled.has('IMAP4REV2') || (client.capabilities.has('IMAP4rev2') && !client.capabilities.has('IMAP4rev1'))
+  )
+}
+
+function isValidUid(value: unknown, minUid: number, maxUid: number): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= minUid && value <= maxUid
+}
+
+function isValidUidArray(value: unknown, minUid: number, maxUid: number, maxCount?: number): value is number[] {
+  if (!Array.isArray(value) || (maxCount !== undefined && value.length > maxCount)) return false
+
+  const seenUids = new Set<number>()
+  return value.every((uid) => {
+    if (!isValidUid(uid, minUid, maxUid) || seenUids.has(uid)) return false
+    seenUids.add(uid)
+    return true
+  })
+}
+
+function isValidUidSequenceSet(value: string, limit: number, newestUid: number): boolean {
+  if (!RE_UID_SEQUENCE_SET.test(value)) return false
+
+  const seenUids = new Set<number>()
+  for (const sequence of value.split(',')) {
+    const [startToken, endToken] = sequence.split(':')
+    const startUid = Number(startToken)
+    const endUid = endToken === undefined ? startUid : Number(endToken)
+    if (!isValidUid(startUid, 1, newestUid) || !isValidUid(endUid, 1, newestUid)) return false
+
+    const low = Math.min(startUid, endUid)
+    const high = Math.max(startUid, endUid)
+    const rangeLength = high - low + 1
+    if (!Number.isSafeInteger(rangeLength) || rangeLength > limit - seenUids.size) return false
+
+    for (let uid = low; uid <= high; uid += 1) {
+      if (seenUids.has(uid)) return false
+      seenUids.add(uid)
+    }
+  }
+
+  return true
+}
+
+function isValidPartialMessages(value: unknown, limit: number, newestUid: number): value is string | number[] {
+  if (Array.isArray(value)) return isValidUidArray(value, 1, newestUid, limit)
+  return typeof value === 'string' && isValidUidSequenceSet(value, limit, newestUid)
+}
+
+function isValidFallbackUids(value: unknown, low: number, high: number): value is number[] {
+  return isValidUidArray(value, low, high)
+}
+
+/**
+ * Scans backward from the newest UID in fixed-size bounded windows, combining
+ * the caller's criteria with a UID SEARCH range per window, until at least
+ * `limit` matches are found or the scan reaches UID 1. Used when ESEARCH
+ * RETURN (PARTIAL) is unavailable or returns an unusable result, so a large
+ * mailbox is never asked to hand back every matching UID in one response.
+ */
+async function searchNewestUidsInBoundedWindows(
+  client: ImapFlow,
+  criteria: SearchObject,
+  limit: number
+): Promise<number[]> {
+  if (limit <= 0) return []
+
+  const mailbox = client.mailbox
+  if (!mailbox) throw new Error('IMAP mailbox is not selected')
+
+  const { uidNext } = mailbox
+  if (!Number.isSafeInteger(uidNext) || uidNext < 1) {
+    throw new Error(`IMAP mailbox returned an invalid uidNext value: ${String(uidNext)}`)
+  }
+
+  const selectedUids: number[] = []
+  const seenUids = new Set<number>()
+  for (let high = uidNext - 1; high >= 1 && selectedUids.length < limit; high -= UID_SEARCH_WINDOW_SIZE) {
+    const low = Math.max(1, high - UID_SEARCH_WINDOW_SIZE + 1)
+    const searchResult = await client.search({ ...criteria, uid: `${low}:${high}` }, { uid: true })
+
+    if (searchResult === false) throw new Error('IMAP UID SEARCH returned no result')
+    if (!isValidFallbackUids(searchResult, low, high)) throw new Error('IMAP UID SEARCH returned invalid UIDs')
+
+    for (const uid of searchResult) {
+      if (seenUids.has(uid)) throw new Error('IMAP UID SEARCH returned duplicate UIDs')
+      seenUids.add(uid)
+      selectedUids.push(uid)
+    }
+
+    selectedUids.sort((left, right) => left - right)
+    if (selectedUids.length > limit) selectedUids.splice(0, selectedUids.length - limit)
+  }
+
+  return selectedUids
+}
+
+/**
+ * Selects the UIDs of the newest `limit` messages matching criteria. Prefers
+ * ESEARCH RETURN (PARTIAL) -- a single round trip on capable servers -- and
+ * only falls back to bounded descending UID-window searches when the server
+ * has no ESEARCH capability, or its ESEARCH response resolves to `false` or
+ * an object with no usable `partial` result. Never issues a plain UID SEARCH
+ * with no UID range, which would ask the server to return every matching UID
+ * in the mailbox.
+ */
+async function searchNewestUids(client: ImapFlow, criteria: SearchObject, limit: number): Promise<string | number[]> {
+  if (limit <= 0) return []
+
+  if (hasEsearchCapability(client)) {
+    const searchResult = await client.search(criteria, {
+      uid: true,
+      returnOptions: [{ partial: `-${limit}:-1` }]
+    })
+
+    const partial =
+      typeof searchResult === 'object' && searchResult !== null && !Array.isArray(searchResult)
+        ? searchResult.partial
+        : undefined
+
+    const partialMessages: unknown = partial?.messages
+    const mailbox = client.mailbox
+    const newestUid =
+      mailbox && Number.isSafeInteger(mailbox.uidNext) && mailbox.uidNext >= 1 ? mailbox.uidNext - 1 : null
+    if (newestUid !== null && isValidPartialMessages(partialMessages, limit, newestUid)) return partialMessages
+  }
+
+  return searchNewestUidsInBoundedWindows(client, criteria, limit)
 }
 
 /**
@@ -442,16 +584,10 @@ export async function searchEmails(
         const emails = await withConnection(account, async (client) => {
           const lock = await client.getMailboxLock(folder)
           try {
-            // Step 1: search to get UIDs (fast — server-side filtering)
-            const allUids = await client.search(criteria, { uid: true })
+            const selectedUids = await searchNewestUids(client, criteria, limit)
+            if (selectedUids.length === 0) return []
 
-            if (!allUids || allUids.length === 0) return []
-
-            // Step 2: take the most recent `limit` UIDs (highest UIDs = most recent)
-            const selectedUids = (allUids as number[]).slice(-limit)
-
-            // Step 3: fetch only those specific UIDs
-            return await client.fetchAll(
+            const messages = await client.fetchAll(
               selectedUids,
               {
                 uid: true,
@@ -462,6 +598,7 @@ export async function searchEmails(
               },
               { uid: true }
             )
+            return messages.sort((left, right) => left.uid - right.uid)
           } finally {
             lock.release()
           }
