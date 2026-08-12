@@ -31,8 +31,9 @@ describe.skipIf(!EMAIL_CREDS)('MCP Protocol - Live Server (stdio)', () => {
 
   beforeAll(async () => {
     transport = new StdioClientTransport({
-      command: 'node',
-      args: ['bin/cli.mjs'],
+      command: process.execPath,
+      args: [resolve(import.meta.dirname, '../../bin/cli.mjs')],
+      cwd: resolve(import.meta.dirname, '../..'),
       env: {
         ...(process.env as Record<string, string>),
         EMAIL_CREDENTIALS: EMAIL_CREDS,
