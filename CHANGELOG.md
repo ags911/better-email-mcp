@@ -2,6 +2,17 @@
 
 <!-- version list -->
 
+## v1.38.3-beta.2 (2026-08-12)
+
+### Bug Fixes
+
+- Clear reset account snapshot in active session
+  ([`24deeb9`](https://github.com/n24q02m/better-email-mcp/commit/24deeb96a243cf18118aa42ae7459fbd2ef99eaf))
+
+- Cover subject reset error path
+  ([`f42357f`](https://github.com/n24q02m/better-email-mcp/commit/f42357f87e83980ca95208b872af30e1c317d0a5))
+
+
 ## v1.38.3-beta.1 (2026-08-12)
 
 ### Bug Fixes
