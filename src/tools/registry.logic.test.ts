@@ -156,6 +156,37 @@ describe('ReadResourceRequestSchema handler', () => {
 })
 
 describe('CallToolRequestSchema handler - successful tool calls', () => {
+  it('clears the live account snapshot after a successful subject reset', async () => {
+    const { handleConfig } = await import('./composite/config.js')
+    const { folders } = await import('./composite/folders.js')
+    vi.mocked(handleConfig).mockResolvedValue({
+      action: 'setup_reset',
+      state: 'awaiting_setup',
+      message: 'Credential state reset to awaiting_setup. Config file deleted.'
+    } as any)
+    vi.mocked(folders).mockResolvedValue({ folders: [] })
+
+    const handlers = new Map<any, any>()
+    const server = {
+      setRequestHandler: vi.fn((schema: any, handler: any) => {
+        handlers.set(schema, handler)
+      })
+    } as any
+    const accounts = [{ email: 'user@example.com' }] as any
+    registerTools(server, accounts, { clearSubjectCredentials: vi.fn() })
+    const handler = handlers.get(CallToolRequestSchema)
+
+    await handler({
+      params: { name: 'config', arguments: { action: 'setup_reset' } }
+    })
+    await handler({
+      params: { name: 'folders', arguments: { action: 'list' } }
+    })
+
+    expect(accounts).toHaveLength(0)
+    expect(folders).toHaveBeenLastCalledWith([], { action: 'list' })
+  })
+
   it('should call messages function and return wrapped JSON result', async () => {
     const { messages } = await import('./composite/messages.js')
     const mockResult = { emails: [{ uid: 1, subject: 'Test' }] }

@@ -392,12 +392,22 @@ export function registerTools(server: Server, initialAccounts: AccountConfig[], 
         }
       }
 
+      const configInput = name === 'config' ? (args as unknown as ConfigInput) : undefined
       const result =
         name === 'config'
-          ? await handleConfig(accounts, args as unknown as ConfigInput, {
+          ? await handleConfig(accounts, configInput!, {
               clearSubjectCredentials: options.clearSubjectCredentials
             })
           : await handler(accounts, args)
+
+      // A server instance is reused for every MCP request in one session. The
+      // subject-scoped account list is therefore a request-local snapshot, not
+      // a live KV view. After a successful reset, clear that snapshot as well
+      // as the durable store so the next tool call in the same session cannot
+      // continue using credentials that were just deleted.
+      if (configInput?.action === 'setup_reset') {
+        accounts.length = 0
+      }
 
       const jsonText = JSON.stringify(result, null, 2)
       return {
