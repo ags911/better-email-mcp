@@ -212,6 +212,16 @@ describe('config - setup_start', () => {
 })
 
 describe('config - setup_reset', () => {
+  it('rejects a subject-scoped reset when durable credential cleanup is unavailable', async () => {
+    await expect(
+      subjectContext.run({ sub: 'sub-reset-without-store', accounts }, () =>
+        handleConfig(accounts, { action: 'setup_reset' })
+      )
+    ).rejects.toThrow('Subject credential reset is not configured for HTTP mode.')
+
+    expect(mockResetState).not.toHaveBeenCalled()
+  })
+
   it('clears the subject-scoped credential store before resetting state', async () => {
     const clearCredentials = vi.fn().mockResolvedValue(undefined)
     mockResetState.mockResolvedValue(undefined)
