@@ -112,7 +112,7 @@ Two transports, selected in `init-server.ts:52-53`. There is no `MCP_MODE` env v
 
 3. **Config storage path**: stdio/single-user config ghi qua mcp-core `config-file.js` -> `config.enc` tại platformdirs `mcp` config dir (`$APPDATA\mcp\Config\config.enc` trên Windows; khac Python servers `$LOCALAPPDATA\mcp\config.enc`). Khi debug/test, clean ca 2 paths + `~/.better-email-mcp/tokens.json` de reset state.
 
-4. **Outlook token email key**: `saveOutlookTokens` fallback to `OUTLOOK_EMAIL` env hoac `'outlook-device-code'` khi Microsoft token response khong include email field (device code mặc định không trả email). Workaround: set `OUTLOOK_EMAIL` env var khi self-host. Long-term fix: request `openid email profile` scopes + decode id_token trong onTokenReceived.
+4. **Outlook token identity**: resolved in the current source. `saveOutlookTokens` resolves the key in this order: token `email`, `OUTLOOK_EMAIL`, token `sub`, decoded `id_token` subject, then the deterministic `outlook-device-code` fallback. `oauth2.test.ts` covers each branch. Keep `OUTLOOK_EMAIL` as an explicit workaround only when the provider response has no usable identity claim; do not treat the old "long-term fix" note as open work.
 
 ## E2E
 
