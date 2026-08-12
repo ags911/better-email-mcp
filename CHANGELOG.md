@@ -2,6 +2,23 @@
 
 <!-- version list -->
 
+## v1.38.3-beta.1 (2026-08-12)
+
+### Bug Fixes
+
+- Clear subject-scoped email credentials on reset
+  ([`c7c9847`](https://github.com/n24q02m/better-email-mcp/commit/c7c9847c54f2e1b8c65ff7eed588e53b581bbcb4))
+
+- Reconcile dependency dashboard updates
+  ([`fbf2543`](https://github.com/n24q02m/better-email-mcp/commit/fbf254368e3eb36869dfd02eebdd2b00101594b8))
+
+- Update wrangler dashboard dependency
+  ([`77f873a`](https://github.com/n24q02m/better-email-mcp/commit/77f873ae41c2f5be2569878a6b4bea8d77166edb))
+
+- Use absolute node path in live protocol harness
+  ([`5dc6feb`](https://github.com/n24q02m/better-email-mcp/commit/5dc6febf1ab1435558d5a4ea64297e77268048ea))
+
+
 ## v1.38.2 (2026-08-11)
 
 ### Bug Fixes
