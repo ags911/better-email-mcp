@@ -5,8 +5,8 @@
  * so tool handlers can look up the caller's own mailbox list without ever
  * touching process-global env vars. The ``sub`` is the JWT ``sub`` claim
  * issued by the local OAuth AS (see ``mcp-core`` SubjectContext), and
- * ``accounts`` is the list resolved from the in-memory per-user credential
- * store (``in-memory-cred-store.ts``).
+ * ``accounts`` is the list resolved from the deployment's per-user credential
+ * store (Cloudflare KV via ``cred-store.ts`` or the local in-memory fallback).
  *
  * Local-relay + stdio do NOT use this — they're explicitly single-user and
  * read from ``process.env.EMAIL_CREDENTIALS`` / the closure resolved at

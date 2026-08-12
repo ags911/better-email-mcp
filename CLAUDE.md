@@ -46,7 +46,8 @@ src/
   relay-schema.ts                # Relay form schema (email credential fields)
   credential-state.ts            # Single-user / stdio credential resolution from env
   auth/                          # Per-user credential store + Outlook OAuth (HTTP mode)
-    in-memory-cred-store.ts      # LIVE per-user store: ephemeral in-memory, keyed by JWT sub
+    in-memory-cred-store.ts      # Local per-user store fallback; ephemeral, keyed by JWT sub
+    cred-store.ts                # Cloudflare KV write-through store, keyed by JWT sub
     outlook-device-code.ts       # Microsoft device-code OAuth flow
     subject-context.ts           # Per-request JWT-sub scope (AsyncLocalStorage)
   transports/
@@ -65,7 +66,7 @@ src/
   - Custom IMAP host: `user@custom.com:password:imap.custom.com`
   - Custom IMAP host + port: `user@custom.com:password:imap.custom.com:1993`
   - Local IMAP proxy: `user@custom.com:password:localhost:1993` (`localhost` accepted as host; per-account port)
-- **http mode** (opt-in via `--http`, `MCP_TRANSPORT=http`, or `TRANSPORT_MODE=http`): `PUBLIC_URL` (for relay/OAuth redirect URLs). Per-user credentials are held in an in-memory store (`auth/in-memory-cred-store.ts`, keyed by JWT `sub`, cleared on restart). `MCP_AUTH_DISABLE=1` skips Bearer JWT verification (for deploys behind an external auth gateway).
+- **http mode** (opt-in via `--http`, `MCP_TRANSPORT=http`, or `TRANSPORT_MODE=http`): `PUBLIC_URL` (for relay/OAuth redirect URLs). With `MCP_STORAGE_BACKEND=cf-kv`, per-user credentials are encrypted in the KV-backed store (`auth/cred-store.ts`, keyed by JWT `sub`) and survive container recreation; local HTTP falls back to the process-local store (`auth/in-memory-cred-store.ts`). `MCP_AUTH_DISABLE=1` skips Bearer JWT verification (for deploys behind an external auth gateway).
 - `PORT` (default `0` = OS-assigned random port), `HOST` (optional bind address)
 - `OUTLOOK_CLIENT_ID` -- tu chon, cho self-hosted OAuth2 client. CLI `auth --client-id=<id>` override env var (flag thang env, xem `auth-cli.ts:parseArgs`)
 - `OUTLOOK_TENANT` -- tu chon, tenant cho CA device-code LAN token refresh (`oauth2.ts:getOutlookTenant`). Default `consumers` (stdio/CLI) va `common` (http delegated, `auth/outlook-device-code.ts`). Work/school (Entra ID) can `common` hoac tenant GUID -- refresh token cua work/school danh vao `/consumers` se loi `AADSTS7000012`
@@ -132,6 +133,6 @@ Tier policy:
 - **T2 non-interaction** (`make e2e-config CONFIG=<id>` locally) - driver pre-fills relay form from skret AWS SSM `/better-email-mcp/prod` (`ap-southeast-1`). No user gate.
 - **T2 interaction** - driver fills relay form, then prints upstream user-gate URL; user signs in / types OTP at provider. Driver enforces per-flow timeouts (device-code 900s, oauth-redirect 300s, browser-form 600s) and emits `[poll] elapsed=Xs remaining=Ys status=<body>` every 30s. On timeout, container logs + last `setup-status` are saved to `<tmp>/e2e-diag/` BEFORE teardown for post-mortem.
 
-Multi-user remote mode (deployment property; not a separate config) keys per-user credentials by JWT `sub` in an in-memory store (`auth/in-memory-cred-store.ts`, TC-NearZK), cleared on restart — users re-submit after a restart.
+Multi-user remote mode (deployment property; not a separate config) keys per-user credentials by JWT `sub`. Cloudflare deployments use the encrypted KV-backed store (`auth/cred-store.ts`) and survive container recreation; local HTTP deployments use the in-memory fallback (`auth/in-memory-cred-store.ts`) and require re-authentication after restart.
 
 References: `mcp-core/scripts/e2e/matrix.yaml`, `~/.claude/skills/mcp-dev/references/e2e-full-matrix.md` (harness-readiness gate), `~/.claude/skills/mcp-dev/references/secrets-skret.md` (per-server credential layout), `~/.claude/skills/mcp-dev/references/multi-user-pattern.md` (per-JWT-sub isolation).

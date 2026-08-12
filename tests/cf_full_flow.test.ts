@@ -1,10 +1,10 @@
 import { describe, expect, test } from 'vitest'
 
 // Live self-test for the deployed Cloudflare worker (success criterion 3):
-// login -> save a Gmail app-password credential (retry-on-500 for the E.1
+// login -> save an EMAIL_CREDENTIALS credential (retry-on-500 for the E.1
 // outbound-interception race) -> authenticated MCP tool call. Gated on CF_LIVE
 // so it never runs in CI / the default T0 unit suite — only against the deployed
-// endpoint. Credentials come from skret /better-email-mcp/prod (CF_GMAIL_CRED)
+// endpoint. Credentials come from skret /better-email-mcp/prod (CF_EMAIL_CREDENTIALS)
 // + the OAuth password grant Bearer (CF_BEARER); never inline secrets.
 //
 // Run:
@@ -25,21 +25,23 @@ async function postWithRetry(url: string, init: RequestInit, tries = 5): Promise
 }
 
 describe.skipIf(!process.env.CF_LIVE)('CF full OAuth password flow', () => {
-  test('login -> save Gmail credential (retry-on-500) -> authenticated tool call', async () => {
+  test('login -> save EMAIL_CREDENTIALS (retry-on-500) -> authenticated tool call', async () => {
     // 1. Confirm the OAuth protected-resource metadata is served.
     const metaResp = await fetch(`${BASE}/.well-known/oauth-protected-resource`)
     expect(metaResp.status).toBe(200)
 
     // 2. Bearer minted by the harness preamble (mcp-core OAuth password grant
-    //    against the relay password + Gmail app-password from skret).
+    //    against the relay password + EMAIL_CREDENTIALS from skret).
     const token = process.env.CF_BEARER
     expect(token, 'set CF_BEARER from the OAuth password grant preamble').toBeTruthy()
 
-    // 3. Save the Gmail credential via the authorize callback (retry-on-500).
+    // 3. Save the email credential via the authorize callback (retry-on-500).
     const saveResp = await postWithRetry(`${BASE}/authorize/submit`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
-      body: JSON.stringify({ EMAIL_CREDENTIALS: process.env.CF_GMAIL_CRED })
+      body: JSON.stringify({
+        EMAIL_CREDENTIALS: process.env.CF_EMAIL_CREDENTIALS?.split(',')[0]?.trim()
+      })
     })
     expect(saveResp.status).toBeLessThan(400)
 

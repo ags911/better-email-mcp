@@ -253,7 +253,7 @@ In HTTP mode, Outlook/Hotmail/Live accounts use OAuth2 device-code automatically
 1. The server prints a device code and a Microsoft login URL
 2. Open the URL in a browser and enter the code
 3. Sign in and authorize the app
-4. Tokens are persisted per JWT sub — in the encrypted Cloudflare KV credential blob (`subs/<sub>/config`) on the serverless deploy, or in `~/.better-email-mcp/tokens.json` for single-user / stdio
+4. Tokens are persisted per JWT sub — in the encrypted Cloudflare KV credential blob (`subs/<sub>/config`) on the serverless deploy, in the local in-memory store for local HTTP, or in `~/.better-email-mcp/tokens.json` for single-user / stdio
 
 OAuth uses the bundled public Azure client (`d56f8c71-9f7c-43f4-9934-be29cb6e77b0`, Thunderbird-pattern) -- no user-side Azure registration needed.
 
@@ -409,12 +409,12 @@ for the encryption and trust details.
 
 ## Trust Model
 
-This plugin implements **TC-NearZK** (in-memory, ephemeral). See the [mcp-core trust model](https://mcp.n24q02m.com/servers/mcp-core/trust-model/) for full classification.
+This plugin implements **TC-NearZK**. Storage durability depends on the deployment mode; see the [mcp-core trust model](https://mcp.n24q02m.com/servers/mcp-core/trust-model/) for full classification.
 
 | Mode | Storage | Encryption | Who can read your data? |
 |---|---|---|---|
-| HTTP remote (hosted) | In-memory `Map<sub, OAuthToken>` | In-process only | Server process (cleared on restart) |
-| HTTP self-host | Same as hosted | Same | Only you (admin = user) |
+| HTTP remote (Cloudflare) | Encrypted Workers KV `subs/<sub>/config` | AES-256-GCM | Server operator (admin = user) |
+| HTTP local Docker | In-memory `Map<sub, CredentialPayload>` | In-process only | Server process (cleared on restart) |
 | stdio | platformdirs `mcp` config dir (`config.enc`; e.g. `%APPDATA%\mcp\Config\config.enc` on Windows) | AES-GCM, machine-bound key | Only your OS user (file perm 0600) |
 
 ## License

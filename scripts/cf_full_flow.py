@@ -24,7 +24,7 @@ Recreate gate (SUCCESS CRITERION 4 -- the whole point of the migration):
                  KV (PerSubCredStore, embed in subs/<sub>/config), and the JWT still
                  verifies (EdDSA derived from CREDENTIAL_SECRET, stable across recreate).
 
-Secrets from env (skret): GMAIL_EMAIL + GMAIL_APP_PASSWORD from /better-email-mcp/prod;
+Secrets from env (skret): EMAIL_CREDENTIALS from /better-email-mcp/prod;
 relay gate password MCP_RELAY_PASSWORD (or RELAY_PW) from /oci-vm-prod/prod
 (infra-shared) -- compose both namespaces.
 
@@ -69,15 +69,17 @@ def _password() -> str:
 
 
 def _email_credentials() -> str:
-    """EMAIL_CREDENTIALS = '<gmail>:<app-password>' from the skret e2e identity."""
-    email = os.environ.get("GMAIL_EMAIL")
-    app_pw = os.environ.get("GMAIL_APP_PASSWORD")
-    if not email or not app_pw:
+    """Return the first canonical account for this single-account flow."""
+    credentials = os.environ.get("EMAIL_CREDENTIALS", "").strip()
+    if not credentials:
         raise SystemExit(
-            "GMAIL_EMAIL + GMAIL_APP_PASSWORD required (skret /better-email-mcp/prod) "
+            "EMAIL_CREDENTIALS required (skret /better-email-mcp/prod) "
             "to save a credential -- the server validates the IMAP login on save."
         )
-    return f"{email}:{app_pw}"
+    first = credentials.split(",", 1)[0].strip()
+    if not first:
+        raise SystemExit("EMAIL_CREDENTIALS must contain at least one account.")
+    return first
 
 
 class _SaveRetry(Exception):

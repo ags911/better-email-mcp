@@ -1,9 +1,9 @@
 /**
- * Per-user credential store with in-memory storage only (TC-NearZK).
+ * Local per-user credential store with in-memory storage (TC-NearZK fallback).
  *
- * The sole per-user credential store for HTTP multi-user mode. v1.0+ aligns
- * with Notion's in-memory pattern: server has access during request lifetime;
- * restart clears all credentials, users re-OAuth.
+ * This is the local/stdio fallback. Cloudflare HTTP deployments select the
+ * durable `PerSubCredStore` from `cred-store.ts`; this implementation remains
+ * process-local and restart clears all credentials.
  *
  * Trust model: server admin (n24q02m operator) can dump live memory via
  * debugger but no persistent file = no FS-dump compromise + no admin

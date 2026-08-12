@@ -332,7 +332,9 @@ export async function startHttp(): Promise<void> {
       { name: `@n24q02m/${SERVER_NAME}`, version: '0.0.0' },
       { capabilities: { tools: {}, resources: {} } }
     )
-    registerTools(server, accountsForThisRequest)
+    registerTools(server, accountsForThisRequest, {
+      clearSubjectCredentials: (sub) => credStore.clear(sub)
+    })
     return server as unknown as McpServer
   }
 

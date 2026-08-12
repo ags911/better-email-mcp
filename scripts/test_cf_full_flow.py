@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import importlib.util
+import os
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 _SCRIPT = Path(__file__).with_name("cf_full_flow.py")
@@ -16,6 +18,19 @@ _SPEC.loader.exec_module(_MODULE)
 
 
 class CfFullFlowMcpSdkTest(unittest.TestCase):
+    def test_email_credentials_selects_first_account_for_single_account_flow(self) -> None:
+        canonical = "first@gmail.com:app-password,second@outlook.com:oauth-token"
+        with patch.dict(
+            os.environ,
+            {
+                "EMAIL_CREDENTIALS": canonical,
+                "GMAIL_EMAIL": "stale@gmail.com",
+                "GMAIL_APP_PASSWORD": "stale-password",
+            },
+            clear=True,
+        ):
+            self.assertEqual(_MODULE._email_credentials(), "first@gmail.com:app-password")
+
     def test_session_loads_supported_streamable_http_client(self) -> None:
         transport, client_session = asyncio.run(
             _MODULE._session("https://example.invalid", "token")

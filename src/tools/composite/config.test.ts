@@ -212,6 +212,23 @@ describe('config - setup_start', () => {
 })
 
 describe('config - setup_reset', () => {
+  it('clears the subject-scoped credential store before resetting state', async () => {
+    const clearCredentials = vi.fn().mockResolvedValue(undefined)
+    mockResetState.mockResolvedValue(undefined)
+    mockGetState.mockReturnValue('awaiting_setup')
+
+    const result = await subjectContext.run({ sub: 'sub-reset', accounts }, () =>
+      handleConfig(accounts, { action: 'setup_reset' }, { clearSubjectCredentials: clearCredentials })
+    )
+
+    expect(clearCredentials).toHaveBeenCalledWith('sub-reset')
+    expect(result).toEqual({
+      action: 'setup_reset',
+      state: 'awaiting_setup',
+      message: 'Credential state reset to awaiting_setup. Config file deleted.'
+    })
+  })
+
   it('resets state and returns confirmation', async () => {
     mockResetState.mockResolvedValue(undefined)
     mockGetState.mockReturnValue('awaiting_setup')

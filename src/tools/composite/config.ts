@@ -26,6 +26,11 @@ export interface ConfigInput {
   value?: string
 }
 
+export interface ConfigHandlerOptions {
+  /** Clear the durable credential blob for the current JWT subject. */
+  clearSubjectCredentials?: (sub: string) => Promise<void>
+}
+
 interface ConfigStatusResult {
   action: 'status'
   state: CredentialState
@@ -82,7 +87,11 @@ type ConfigResult =
 /**
  * Unified config tool - credential lifecycle + runtime settings
  */
-export async function handleConfig(accounts: AccountConfig[], input: ConfigInput): Promise<ConfigResult> {
+export async function handleConfig(
+  accounts: AccountConfig[],
+  input: ConfigInput,
+  options: ConfigHandlerOptions = {}
+): Promise<ConfigResult> {
   return withErrorHandling(async () => {
     switch (input.action) {
       case 'status':
@@ -95,7 +104,7 @@ export async function handleConfig(accounts: AccountConfig[], input: ConfigInput
         return await handleSetupStart(input)
 
       case 'setup_reset':
-        return await handleSetupReset()
+        return await handleSetupReset(options)
 
       case 'setup_complete':
         return await handleSetupComplete(accounts)
@@ -164,11 +173,18 @@ async function handleSetupStart(_input: ConfigInput): Promise<ConfigSetupStartRe
   }
 }
 
-async function handleSetupReset(): Promise<ConfigSetupResetResult> {
+async function handleSetupReset(options: ConfigHandlerOptions): Promise<ConfigSetupResetResult> {
+  const sub = currentSub()
+  if (sub) {
+    if (!options.clearSubjectCredentials) {
+      throw new Error('Subject credential reset is not configured for HTTP mode.')
+    }
+    await options.clearSubjectCredentials(sub)
+  }
   await resetState()
   return {
     action: 'setup_reset',
-    state: getState(),
+    state: sub ? 'awaiting_setup' : getState(),
     message: 'Credential state reset to awaiting_setup. Config file deleted.'
   }
 }

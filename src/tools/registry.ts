@@ -20,7 +20,7 @@ import {
 import { buildOpenRelayHandler } from '@n24q02m/mcp-core'
 import { getSetupUrl, getState } from '../credential-state.js'
 import { type AttachmentsInput, attachments } from './composite/attachments.js'
-import { type ConfigInput, handleConfig } from './composite/config.js'
+import { type ConfigHandlerOptions, type ConfigInput, handleConfig } from './composite/config.js'
 import { type FoldersInput, folders } from './composite/folders.js'
 import { type MessagesInput, messages } from './composite/messages.js'
 // Import mega tools
@@ -275,6 +275,10 @@ async function handleHelp(args: unknown): Promise<{ tool: string; documentation:
 
 type ToolHandler = (accounts: AccountConfig[], args: unknown) => Promise<unknown>
 
+export interface RegisterToolsOptions {
+  clearSubjectCredentials?: ConfigHandlerOptions['clearSubjectCredentials']
+}
+
 const TOOL_HANDLERS: Record<string, ToolHandler> = {
   messages: (accounts, args) => messages(accounts, args as unknown as MessagesInput),
   folders: (accounts, args) => folders(accounts, args as unknown as FoldersInput),
@@ -293,7 +297,7 @@ const AVAILABLE_RESOURCE_URIS_STRING = RESOURCES.map((r) => r.uri).join(', ')
 const VALID_TOOL_NAMES = TOOLS.map((t) => t.name)
 const AVAILABLE_TOOLS_STRING = VALID_TOOL_NAMES.join(', ')
 
-export function registerTools(server: Server, initialAccounts: AccountConfig[]) {
+export function registerTools(server: Server, initialAccounts: AccountConfig[], options: RegisterToolsOptions = {}) {
   // Mutable reference: updated via hot-reload when relay credentials arrive after startup
   let accounts = initialAccounts
   const openRelayHandler = buildOpenRelayHandler({
@@ -388,7 +392,12 @@ export function registerTools(server: Server, initialAccounts: AccountConfig[]) 
         }
       }
 
-      const result = await handler(accounts, args)
+      const result =
+        name === 'config'
+          ? await handleConfig(accounts, args as unknown as ConfigInput, {
+              clearSubjectCredentials: options.clearSubjectCredentials
+            })
+          : await handler(accounts, args)
 
       const jsonText = JSON.stringify(result, null, 2)
       return {

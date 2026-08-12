@@ -5,6 +5,7 @@ import {
   ReadResourceRequestSchema
 } from '@modelcontextprotocol/sdk/types.js'
 import { describe, expect, it, vi } from 'vitest'
+import { subjectContext } from '../auth/subject-context.js'
 import { registerTools } from './registry.js'
 
 /**
@@ -218,5 +219,27 @@ describe('registerTools function', () => {
     expect(registeredSchemas).toContain(ListResourcesRequestSchema)
     expect(registeredSchemas).toContain(ReadResourceRequestSchema)
     expect(registeredSchemas).toContain(CallToolRequestSchema)
+  })
+
+  it('passes the subject credential reset callback through the config tool', async () => {
+    const mockServer = {
+      setRequestHandler: vi.fn()
+    }
+    const clearSubjectCredentials = vi.fn().mockRejectedValue(new Error('reset callback invoked'))
+
+    registerTools(mockServer as any, [], { clearSubjectCredentials })
+
+    const callToolHandler = mockServer.setRequestHandler.mock.calls.find(
+      ([schema]) => schema === CallToolRequestSchema
+    )?.[1]
+    expect(callToolHandler).toBeTypeOf('function')
+
+    const result = await subjectContext.run({ sub: 'sub-registry-reset', accounts: [] }, () =>
+      callToolHandler({ params: { name: 'config', arguments: { action: 'setup_reset' } } })
+    )
+
+    expect(clearSubjectCredentials).toHaveBeenCalledWith('sub-registry-reset')
+    expect(result.isError).toBe(true)
+    expect(result.content[0].text).toContain('reset callback invoked')
   })
 })
