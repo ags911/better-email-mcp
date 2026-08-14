@@ -2,6 +2,56 @@
 
 <!-- version list -->
 
+## v1.39.0-beta.1 (2026-08-14)
+
+### Bug Fixes
+
+- Add deterministic provider acceptance harness
+  ([#1123](https://github.com/n24q02m/better-email-mcp/pull/1123),
+  [`9132490`](https://github.com/n24q02m/better-email-mcp/commit/91324905a6b4b87c46a6af0a5aecf7f5772f438f))
+
+- Cover IMAP host placeholder ([#1121](https://github.com/n24q02m/better-email-mcp/pull/1121),
+  [`4d4ac84`](https://github.com/n24q02m/better-email-mcp/commit/4d4ac844ffca4a95ae44d029367f060d678b671a))
+
+- Cover provider acceptance selector and fixture boundaries
+  ([#1123](https://github.com/n24q02m/better-email-mcp/pull/1123),
+  [`9132490`](https://github.com/n24q02m/better-email-mcp/commit/91324905a6b4b87c46a6af0a5aecf7f5772f438f))
+
+- Enforce provider acceptance boundaries
+  ([#1123](https://github.com/n24q02m/better-email-mcp/pull/1123),
+  [`9132490`](https://github.com/n24q02m/better-email-mcp/commit/91324905a6b4b87c46a6af0a5aecf7f5772f438f))
+
+- Migrate Renovate config ([#1124](https://github.com/n24q02m/better-email-mcp/pull/1124),
+  [`fb0fb68`](https://github.com/n24q02m/better-email-mcp/commit/fb0fb6838726f6a40b449c1c04fccc6e2ad3f382))
+
+- Optimize entity map lookup ([#1120](https://github.com/n24q02m/better-email-mcp/pull/1120),
+  [`0a0399c`](https://github.com/n24q02m/better-email-mcp/commit/0a0399ce628d779bf5418c23685858d8fc4800fe))
+
+- Update dependencies and Cloudflare dry-run
+  ([`3f84a76`](https://github.com/n24q02m/better-email-mcp/commit/3f84a764285284629f0d9055cc162b959c0dbea2))
+
+- 🎨 Palette: Add descriptive placeholder to password field
+  ([#1126](https://github.com/n24q02m/better-email-mcp/pull/1126),
+  [`e3b7340`](https://github.com/n24q02m/better-email-mcp/commit/e3b7340650da1b40d97c600e725486ffb37d13bd))
+
+- **deps**: Lock file maintenance ([#1125](https://github.com/n24q02m/better-email-mcp/pull/1125),
+  [`1a14820`](https://github.com/n24q02m/better-email-mcp/commit/1a148207140b46efcd58b0a22d4523fda7cc8f4a))
+
+### Features
+
+- Add deterministic provider acceptance harness
+  ([#1123](https://github.com/n24q02m/better-email-mcp/pull/1123),
+  [`9132490`](https://github.com/n24q02m/better-email-mcp/commit/91324905a6b4b87c46a6af0a5aecf7f5772f438f))
+
+- 🎨 Palette: Add placeholder to imap_host field
+  ([#1121](https://github.com/n24q02m/better-email-mcp/pull/1121),
+  [`4d4ac84`](https://github.com/n24q02m/better-email-mcp/commit/4d4ac844ffca4a95ae44d029367f060d678b671a))
+
+- 🎨 Palette: Add placeholder to imap_host in relay schema
+  ([#1121](https://github.com/n24q02m/better-email-mcp/pull/1121),
+  [`4d4ac84`](https://github.com/n24q02m/better-email-mcp/commit/4d4ac844ffca4a95ae44d029367f060d678b671a))
+
+
 ## v1.38.3 (2026-08-12)
 
 
