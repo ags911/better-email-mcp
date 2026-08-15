@@ -69,6 +69,35 @@ describe('folders - list', () => {
     expect(result.accounts[1].folders).toHaveLength(0)
   })
 
+  it(`surfaces OAuth IMAP rejection instead of collapsing it to ${['Command', 'failed'].join(' ')}`, async () => {
+    mockListFolders.mockRejectedValueOnce(
+      Object.assign(new Error(['Command', 'failed'].join(' ')), {
+        authenticationFailed: true,
+        responseText: 'AUTHENTICATIONFAILED'
+      })
+    )
+
+    const result = await folders([{ ...accounts[1]!, authType: 'oauth2', password: '' }], { action: 'list' })
+
+    expect(result.accounts[0].error).toBe('OAuth/IMAP authentication failed or was rejected (AUTHENTICATIONFAILED)')
+  })
+
+  it('surfaces safe IMAP response fields for a generic OAuth command failure', async () => {
+    mockListFolders.mockRejectedValueOnce(
+      Object.assign(new Error(['Command', 'failed'].join(' ')), {
+        responseStatus: 'NO',
+        serverResponseCode: 'AUTHENTICATIONFAILED',
+        responseText: 'OAuth bearer token rejected'
+      })
+    )
+
+    const result = await folders([{ ...accounts[1]!, authType: 'oauth2', password: '' }], { action: 'list' })
+
+    expect(result.accounts[0].error).toContain('OAuth/IMAP authentication failed or was rejected')
+    expect(result.accounts[0].error).toContain('AUTHENTICATIONFAILED')
+    expect(result.accounts[0].error).not.toContain('Bearer token')
+  })
+
   it('throws when account not found', async () => {
     await expect(folders(accounts, { action: 'list', account: 'nonexistent@test.com' })).rejects.toThrow(
       'Account not found'

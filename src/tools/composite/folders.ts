@@ -18,6 +18,34 @@ export interface FoldersInput {
   folder?: string
 }
 
+function describeFolderError(account: AccountConfig, error: unknown): string {
+  if (!error || typeof error !== 'object') return String(error)
+
+  const raw = error as {
+    message?: unknown
+    authenticationFailed?: unknown
+    responseText?: unknown
+    responseStatus?: unknown
+    serverResponseCode?: unknown
+    oauthError?: unknown
+  }
+  const oauthError =
+    raw.oauthError && typeof raw.oauthError === 'object' ? (raw.oauthError as { error?: unknown }).error : undefined
+  const details = [raw.responseStatus, raw.serverResponseCode, raw.responseText, oauthError]
+    .filter((value): value is string | number => typeof value === 'string' || typeof value === 'number')
+    .map((value) =>
+      String(value)
+        .replace(/Bearer\s+\S+/gi, '[redacted token]')
+        .slice(0, 160)
+    )
+  if (account.authType === 'oauth2' && (raw.authenticationFailed === true || details.length > 0)) {
+    const response = details.length > 0 ? ` (${details.join('; ')})` : ''
+    return `OAuth/IMAP authentication failed or was rejected${response}`
+  }
+
+  return typeof raw.message === 'string' ? raw.message : String(error)
+}
+
 /**
  * Unified folders tool - handles folder listing
  */
@@ -82,11 +110,10 @@ async function handleList(accounts: AccountConfig[], input: FoldersInput): Promi
         folders: folderList
       }
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : String(error)
       return {
         account_id: account.id,
         account_email: account.email,
-        error: errorMessage,
+        error: describeFolderError(account, error),
         folders: []
       }
     }
