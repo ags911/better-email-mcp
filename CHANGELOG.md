@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.39.0-beta.2 (2026-08-15)
+
+### Bug Fixes
+
+- Harden Outlook live verification
+  ([`80e3686`](https://github.com/n24q02m/better-email-mcp/commit/80e36867da128968508dd0adec4c438943bb1c56))
+
+
 ## v1.39.0-beta.1 (2026-08-14)
 
 ### Bug Fixes
