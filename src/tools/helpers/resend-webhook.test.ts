@@ -1,5 +1,5 @@
-import { createHmac } from 'node:crypto'
 import { EventEmitter } from 'node:events'
+import { Webhook } from 'svix'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AccountConfig } from './config.js'
 
@@ -13,8 +13,7 @@ import {
   createResendWebhookRoute,
   handleResendWebhookEvent,
   registerPendingSentAppend,
-  takePendingSentAppend,
-  verifyResendWebhookSignature
+  takePendingSentAppend
 } from './resend-webhook.js'
 
 const mockResolveSentFolder = vi.mocked(resolveSentFolder)
@@ -28,13 +27,11 @@ const testAccount: AccountConfig = {
   smtp: { host: 'smtp.arbiris.uk', port: 465, secure: true }
 }
 
-const SECRET = 'whsec_dGVzdHNlY3JldGtleQ==' // whsec_ + base64("testsecretkey")
+const SECRET = 'whsec_dGVzdHNlY3JldGtleQ=='
 
-function sign(body: string, id: string, timestamp: string, secret = SECRET): string {
-  const secretBytes = Buffer.from(secret.replace(/^whsec_/, ''), 'base64')
-  const signedContent = `${id}.${timestamp}.${body}`
-  const sig = createHmac('sha256', secretBytes).update(signedContent).digest('base64')
-  return `v1,${sig}`
+/** Sign a test payload the same way Resend/Svix would, via the real library. */
+function sign(body: string, id: string, timestampSeconds: number, secret = SECRET): string {
+  return new Webhook(secret).sign(id, new Date(timestampSeconds * 1000), body)
 }
 
 beforeEach(() => {
@@ -46,118 +43,6 @@ beforeEach(() => {
 afterEach(() => {
   // Drain any pending entries left over between tests.
   takePendingSentAppend('leftover')
-})
-
-describe('verifyResendWebhookSignature', () => {
-  it('accepts a correctly signed request', () => {
-    const body = '{"type":"email.sent"}'
-    const id = 'msg_1'
-    const timestamp = String(Math.floor(Date.now() / 1000))
-    const svixSignature = sign(body, id, timestamp)
-
-    expect(
-      verifyResendWebhookSignature({
-        rawBody: body,
-        svixId: id,
-        svixTimestamp: timestamp,
-        svixSignature,
-        secret: SECRET
-      })
-    ).toBe(true)
-  })
-
-  it('accepts when the matching signature is one of several space-separated candidates', () => {
-    const body = '{"type":"email.sent"}'
-    const id = 'msg_1'
-    const timestamp = String(Math.floor(Date.now() / 1000))
-    const real = sign(body, id, timestamp)
-    const svixSignature = `v1,bm90dGhlcmlnaHRvbmU= ${real} v2,YW5vdGhlcmZha2U=`
-
-    expect(
-      verifyResendWebhookSignature({
-        rawBody: body,
-        svixId: id,
-        svixTimestamp: timestamp,
-        svixSignature,
-        secret: SECRET
-      })
-    ).toBe(true)
-  })
-
-  it('rejects a tampered body', () => {
-    const id = 'msg_1'
-    const timestamp = String(Math.floor(Date.now() / 1000))
-    const svixSignature = sign('{"type":"email.sent"}', id, timestamp)
-
-    expect(
-      verifyResendWebhookSignature({
-        rawBody: '{"type":"email.bounced"}',
-        svixId: id,
-        svixTimestamp: timestamp,
-        svixSignature,
-        secret: SECRET
-      })
-    ).toBe(false)
-  })
-
-  it('rejects when signed with the wrong secret', () => {
-    const body = '{"type":"email.sent"}'
-    const id = 'msg_1'
-    const timestamp = String(Math.floor(Date.now() / 1000))
-    const svixSignature = sign(body, id, timestamp, 'whsec_d3Jvbmdrzxk=')
-
-    expect(
-      verifyResendWebhookSignature({
-        rawBody: body,
-        svixId: id,
-        svixTimestamp: timestamp,
-        svixSignature,
-        secret: SECRET
-      })
-    ).toBe(false)
-  })
-
-  it('rejects a stale timestamp', () => {
-    const body = '{"type":"email.sent"}'
-    const id = 'msg_1'
-    const staleTimestamp = String(Math.floor(Date.now() / 1000) - 3600)
-    const svixSignature = sign(body, id, staleTimestamp)
-
-    expect(
-      verifyResendWebhookSignature({
-        rawBody: body,
-        svixId: id,
-        svixTimestamp: staleTimestamp,
-        svixSignature,
-        secret: SECRET
-      })
-    ).toBe(false)
-  })
-
-  it('rejects a non-numeric timestamp without throwing', () => {
-    expect(
-      verifyResendWebhookSignature({
-        rawBody: '{}',
-        svixId: 'id',
-        svixTimestamp: 'not-a-number',
-        svixSignature: 'v1,abc',
-        secret: SECRET
-      })
-    ).toBe(false)
-  })
-
-  it('rejects a malformed secret without throwing', () => {
-    const timestamp = String(Math.floor(Date.now() / 1000))
-    expect(
-      verifyResendWebhookSignature({
-        rawBody: '{}',
-        svixId: 'id',
-        svixTimestamp: timestamp,
-        svixSignature: 'v1,abc',
-        secret: 'not-whsec-at-all-###'
-      })
-    ).toBe(false)
-  })
 })
 
 describe('registerPendingSentAppend / takePendingSentAppend', () => {
@@ -292,7 +177,64 @@ describe('createResendWebhookRoute', () => {
     const req = fakeRequest('{"type":"email.sent","data":{"email_id":"x"}}', {
       'svix-id': 'id1',
       'svix-timestamp': String(Math.floor(Date.now() / 1000)),
-      'svix-signature': 'v1,not-a-real-signature'
+      'svix-signature': 'v1,bm90YXJlYWxzaWduYXR1cmU='
+    })
+    const res = fakeResponse()
+
+    await route.handler(req as never, res as never)
+
+    expect(res.statusCode).toBe(401)
+  })
+
+  it('rejects with 401 on a tampered body (signature no longer matches)', async () => {
+    const signedBody = '{"type":"email.sent","data":{"email_id":"x"}}'
+    const id = 'id_tamper'
+    const timestamp = Math.floor(Date.now() / 1000)
+    const svixSignature = sign(signedBody, id, timestamp)
+
+    const route = createResendWebhookRoute()
+    const req = fakeRequest('{"type":"email.bounced","data":{"email_id":"x"}}', {
+      'svix-id': id,
+      'svix-timestamp': String(timestamp),
+      'svix-signature': svixSignature
+    })
+    const res = fakeResponse()
+
+    await route.handler(req as never, res as never)
+
+    expect(res.statusCode).toBe(401)
+  })
+
+  it('rejects with 401 when signed with the wrong secret', async () => {
+    const body = '{"type":"email.sent","data":{"email_id":"x"}}'
+    const id = 'id_wrongsecret'
+    const timestamp = Math.floor(Date.now() / 1000)
+    const svixSignature = sign(body, id, timestamp, 'whsec_d3JvbmdzZWNyZXRrZXk=')
+
+    const route = createResendWebhookRoute()
+    const req = fakeRequest(body, {
+      'svix-id': id,
+      'svix-timestamp': String(timestamp),
+      'svix-signature': svixSignature
+    })
+    const res = fakeResponse()
+
+    await route.handler(req as never, res as never)
+
+    expect(res.statusCode).toBe(401)
+  })
+
+  it('rejects with 401 on a stale timestamp, even with an otherwise-correct signature', async () => {
+    const body = '{"type":"email.sent","data":{"email_id":"x"}}'
+    const id = 'id_stale'
+    const staleTimestamp = Math.floor(Date.now() / 1000) - 3600
+    const svixSignature = sign(body, id, staleTimestamp)
+
+    const route = createResendWebhookRoute()
+    const req = fakeRequest(body, {
+      'svix-id': id,
+      'svix-timestamp': String(staleTimestamp),
+      'svix-signature': svixSignature
     })
     const res = fakeResponse()
 
@@ -304,11 +246,11 @@ describe('createResendWebhookRoute', () => {
   it('rejects with 400 on invalid JSON despite a valid signature', async () => {
     const body = 'not json'
     const id = 'id2'
-    const timestamp = String(Math.floor(Date.now() / 1000))
+    const timestamp = Math.floor(Date.now() / 1000)
     const route = createResendWebhookRoute()
     const req = fakeRequest(body, {
       'svix-id': id,
-      'svix-timestamp': timestamp,
+      'svix-timestamp': String(timestamp),
       'svix-signature': sign(body, id, timestamp)
     })
     const res = fakeResponse()
@@ -323,11 +265,11 @@ describe('createResendWebhookRoute', () => {
 
     const body = JSON.stringify({ type: 'email.sent', data: { email_id: 'msg_route' } })
     const id = 'id3'
-    const timestamp = String(Math.floor(Date.now() / 1000))
+    const timestamp = Math.floor(Date.now() / 1000)
     const route = createResendWebhookRoute()
     const req = fakeRequest(body, {
       'svix-id': id,
-      'svix-timestamp': timestamp,
+      'svix-timestamp': String(timestamp),
       'svix-signature': sign(body, id, timestamp)
     })
     const res = fakeResponse()

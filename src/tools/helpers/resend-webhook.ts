@@ -25,19 +25,14 @@
  * on the second attempt rather than double-appending.
  */
 
-import { createHmac, timingSafeEqual } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { HttpRoute } from '@n24q02m/mcp-core'
+import { Webhook, WebhookVerificationError } from 'svix'
 import type { AccountConfig } from './config.js'
 import { appendToFolder, resolveSentFolder } from './imap-client.js'
 
 const LOG_PREFIX = '[better-email-mcp]'
 const WEBHOOK_PATH = '/webhooks/resend'
-
-// Svix (Resend's webhook signer) recommends rejecting messages whose
-// timestamp is outside a several-minute window, to bound the replay window
-// of a captured request.
-const WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS = 300
 
 export interface PendingSentAppend {
   account: AccountConfig
@@ -61,55 +56,6 @@ export function takePendingSentAppend(emailId: string): PendingSentAppend | unde
   const entry = pendingSentAppends.get(emailId)
   pendingSentAppends.delete(emailId)
   return entry
-}
-
-export interface VerifyWebhookSignatureParams {
-  rawBody: string
-  svixId: string
-  svixTimestamp: string
-  svixSignature: string
-  secret: string
-}
-
-/**
- * Verify a Resend webhook request, signed via Svix.
- *
- * Signed content is `${svixId}.${svixTimestamp}.${rawBody}`, HMAC-SHA256'd
- * with the secret (a `whsec_`-prefixed base64 key), base64-encoded. The
- * `svix-signature` header can carry multiple space-separated `v1,<sig>`
- * candidates; any one matching is valid.
- */
-export function verifyResendWebhookSignature(params: VerifyWebhookSignatureParams): boolean {
-  const { rawBody, svixId, svixTimestamp, svixSignature, secret } = params
-
-  const timestampSeconds = Number(svixTimestamp)
-  if (!Number.isFinite(timestampSeconds)) return false
-  const ageSeconds = Math.abs(Date.now() / 1000 - timestampSeconds)
-  if (ageSeconds > WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS) return false
-
-  let secretBytes: Buffer
-  let expected: Buffer
-  try {
-    secretBytes = Buffer.from(secret.replace(/^whsec_/, ''), 'base64')
-    const signedContent = `${svixId}.${svixTimestamp}.${rawBody}`
-    expected = createHmac('sha256', secretBytes).update(signedContent).digest()
-  } catch {
-    return false
-  }
-
-  const candidates = svixSignature
-    .split(' ')
-    .map((part) => part.split(',')[1])
-    .filter((sig): sig is string => Boolean(sig))
-
-  return candidates.some((candidate) => {
-    try {
-      const candidateBytes = Buffer.from(candidate, 'base64')
-      return candidateBytes.length === expected.length && timingSafeEqual(candidateBytes, expected)
-    } catch {
-      return false
-    }
-  })
 }
 
 export interface ResendWebhookEvent {
@@ -183,9 +129,18 @@ function sendJson(res: ServerResponse, status: number, body: unknown): void {
 /**
  * The HTTP route registered on the same port as `/mcp` (see transports/http.ts).
  * Bypasses Bearer-JWT auth entirely — Resend can't present our OAuth token,
- * so the Svix signature IS the authentication here. Fails closed: an unset
- * secret, missing headers, or a bad signature all reject with 4xx and never
- * reach `handleResendWebhookEvent`.
+ * so the Svix signature IS the authentication here.
+ *
+ * Signature verification is delegated entirely to the official `svix`
+ * package rather than hand-rolled: this is an authentication boundary, not
+ * application logic, and the library owns the exact protocol details
+ * (secret encoding, signed-content format, multi-signature parsing,
+ * timestamp-tolerance replay protection) so we don't have to get them right
+ * ourselves or keep them in sync with upstream changes. `verify()` throws
+ * `WebhookVerificationError` on any invalid/missing/stale signature and
+ * returns the parsed JSON payload on success — so it also replaces our own
+ * `JSON.parse`. Fails closed: an unset secret, missing headers, or anything
+ * `verify()` rejects all return 4xx and never reach `handleResendWebhookEvent`.
  */
 export function createResendWebhookRoute(): HttpRoute {
   return {
@@ -209,18 +164,20 @@ export function createResendWebhookRoute(): HttpRoute {
         return
       }
 
-      const valid = verifyResendWebhookSignature({ rawBody, svixId, svixTimestamp, svixSignature, secret })
-      if (!valid) {
-        console.error(`${LOG_PREFIX} Resend webhook signature verification failed — rejecting`)
-        sendJson(res, 401, { error: 'invalid signature' })
-        return
-      }
-
       let event: ResendWebhookEvent
       try {
-        event = JSON.parse(rawBody)
-      } catch {
-        sendJson(res, 400, { error: 'invalid JSON' })
+        event = new Webhook(secret).verify(rawBody, {
+          'svix-id': svixId,
+          'svix-timestamp': svixTimestamp,
+          'svix-signature': svixSignature
+        }) as ResendWebhookEvent
+      } catch (err) {
+        if (err instanceof WebhookVerificationError) {
+          console.error(`${LOG_PREFIX} Resend webhook signature verification failed — rejecting`)
+          sendJson(res, 401, { error: 'invalid signature' })
+        } else {
+          sendJson(res, 400, { error: 'invalid payload' })
+        }
         return
       }
 
