@@ -22,8 +22,14 @@
  *    used by the SMTP path) purely so the existing IMAP "save to Sent"
  *    step in `send.ts` keeps working unchanged — Resend does not append to
  *    IMAP itself, so the caller still needs those raw bytes for that step.
+ *
+ * Also exposes scheduled sending (`scheduled_at` on `SendEmailOptions`,
+ * passed straight through to Resend) plus `cancelScheduledEmailViaResend`
+ * and `getEmailStatusViaResend` for managing a send after the fact. All
+ * three are Resend-only — there is no SMTP equivalent.
  */
 
+import { randomUUID } from 'node:crypto'
 import { EmailMCPError } from './errors.js'
 import type { EmailAttachment, SendEmailOptions, SendResult } from './smtp-client.js'
 import { textToHtml } from './smtp-client.js'
@@ -45,6 +51,7 @@ interface ResendSendPayload {
   html: string
   headers?: Record<string, string>
   attachments?: ResendAttachment[]
+  scheduled_at?: string
 }
 
 interface ResendSuccessResponse {
@@ -55,6 +62,24 @@ interface ResendErrorResponse {
   statusCode?: number
   name?: string
   message: string
+}
+
+interface ResendEmailDetails {
+  id: string
+  last_event?: string
+  scheduled_at?: string | null
+  created_at?: string
+  subject?: string
+  to?: string[]
+}
+
+export interface EmailStatus {
+  id: string
+  status: string
+  scheduled_at?: string
+  created_at?: string
+  subject?: string
+  to?: string[]
 }
 
 /** Split a comma-separated recipient field into a trimmed, non-empty array. */
@@ -77,13 +102,22 @@ function mapResendAttachments(attachments: EmailAttachment[] | undefined): Resen
  * POST a message to the Resend API.
  * Throws EmailMCPError with the provider's own message on a non-2xx response,
  * so callers get an actionable error instead of a generic HTTP failure.
+ *
+ * Carries an Idempotency-Key so a network-level retry of this exact request
+ * (by an intermediate proxy, or the underlying fetch implementation) can't
+ * result in Resend accepting the same send twice.
  */
-async function callResendApi(apiKey: string, payload: ResendSendPayload): Promise<ResendSuccessResponse> {
+async function callResendApi(
+  apiKey: string,
+  payload: ResendSendPayload,
+  idempotencyKey: string
+): Promise<ResendSuccessResponse> {
   const response = await fetch(RESEND_API_URL, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json'
+      'Content-Type': 'application/json',
+      'Idempotency-Key': idempotencyKey
     },
     body: JSON.stringify(payload)
   })
@@ -96,6 +130,48 @@ async function callResendApi(apiKey: string, payload: ResendSendPayload): Promis
       `Resend API error: ${err.message || `HTTP ${response.status}`}`,
       'RESEND_SEND_FAILED',
       'Check the Resend API key and that the sending domain is verified in the Resend dashboard'
+    )
+  }
+
+  return data
+}
+
+/** POST to Resend's cancel endpoint for a scheduled (not-yet-sent) email. */
+async function callResendCancel(apiKey: string, emailId: string): Promise<{ id: string }> {
+  const response = await fetch(`${RESEND_API_URL}/${encodeURIComponent(emailId)}/cancel`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${apiKey}` }
+  })
+
+  const data = (await response.json()) as { id: string } | ResendErrorResponse
+
+  if (!response.ok || !('id' in data)) {
+    const err = data as ResendErrorResponse
+    throw new EmailMCPError(
+      `Resend API error: ${err.message || `HTTP ${response.status}`}`,
+      'RESEND_CANCEL_FAILED',
+      'The email may have already been sent (only scheduled, unsent emails can be cancelled), or the ID is wrong — check the Resend dashboard'
+    )
+  }
+
+  return data
+}
+
+/** GET an email's current delivery/schedule status from Resend. */
+async function callResendGet(apiKey: string, emailId: string): Promise<ResendEmailDetails> {
+  const response = await fetch(`${RESEND_API_URL}/${encodeURIComponent(emailId)}`, {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${apiKey}` }
+  })
+
+  const data = (await response.json()) as ResendEmailDetails | ResendErrorResponse
+
+  if (!response.ok || !('id' in data)) {
+    const err = data as ResendErrorResponse
+    throw new EmailMCPError(
+      `Resend API error: ${err.message || `HTTP ${response.status}`}`,
+      'RESEND_STATUS_FAILED',
+      'Check that the email ID is correct'
     )
   }
 
@@ -188,10 +264,11 @@ async function sendViaResend(
     text: body,
     html,
     ...(Object.keys(headers).length > 0 ? { headers } : {}),
-    ...(mapResendAttachments(options.attachments) ? { attachments: mapResendAttachments(options.attachments) } : {})
+    ...(mapResendAttachments(options.attachments) ? { attachments: mapResendAttachments(options.attachments) } : {}),
+    ...(options.scheduled_at ? { scheduled_at: options.scheduled_at } : {})
   }
 
-  const result = await callResendApi(apiKey, payload)
+  const result = await callResendApi(apiKey, payload, randomUUID())
 
   // Build raw MIME bytes locally (no network call) purely so the existing
   // IMAP "save to Sent" step in send.ts has something to append.
@@ -245,4 +322,39 @@ export async function forwardEmailViaResend(
     subjectPrefix: 'Fwd:',
     forwardedBody: options.original_body
   })
+}
+
+/** Cancel a Resend email that is scheduled but hasn't sent yet. */
+export async function cancelScheduledEmailViaResend(emailId: string): Promise<{ success: boolean; id: string }> {
+  const apiKey = getResendApiKey()
+  if (!apiKey) {
+    throw new EmailMCPError(
+      'RESEND_API_KEY is not set',
+      'MISSING_CONFIG',
+      'Set the RESEND_API_KEY environment variable to manage Resend-scheduled sends'
+    )
+  }
+  const result = await callResendCancel(apiKey, emailId)
+  return { success: true, id: result.id }
+}
+
+/** Look up an email's current delivery/schedule status from Resend. */
+export async function getEmailStatusViaResend(emailId: string): Promise<EmailStatus> {
+  const apiKey = getResendApiKey()
+  if (!apiKey) {
+    throw new EmailMCPError(
+      'RESEND_API_KEY is not set',
+      'MISSING_CONFIG',
+      'Set the RESEND_API_KEY environment variable to check Resend email status'
+    )
+  }
+  const result = await callResendGet(apiKey, emailId)
+  return {
+    id: result.id,
+    status: result.last_event ?? 'unknown',
+    scheduled_at: result.scheduled_at ?? undefined,
+    created_at: result.created_at,
+    subject: result.subject,
+    to: result.to
+  }
 }

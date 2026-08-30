@@ -16,7 +16,9 @@ vi.mock('nodemailer/lib/mail-composer/index.js', () => ({
 }))
 
 import {
+  cancelScheduledEmailViaResend,
   forwardEmailViaResend,
+  getEmailStatusViaResend,
   getResendApiKey,
   replyToEmailViaResend,
   sendNewEmailViaResend,
@@ -253,5 +255,136 @@ describe('raw MIME bytes for Sent-folder append', () => {
 
     expect(mockBuild).toHaveBeenCalledTimes(1)
     expect(result.raw).toEqual(Buffer.from('raw-email-bytes'))
+  })
+})
+
+describe('scheduled sending', () => {
+  it('passes scheduled_at through to the Resend payload when provided', async () => {
+    mockFetchOnce({ ok: true, json: { id: 'resend-id-10' } })
+
+    await sendNewEmailViaResend('signals@arbiris.uk', {
+      to: 'someone@example.com',
+      subject: 'Scheduled',
+      body: 'body',
+      scheduled_at: '2026-08-29T08:00:00+01:00'
+    })
+
+    const init = (fetch as ReturnType<typeof vi.fn>).mock.calls[0][1]
+    const payload = JSON.parse(init.body)
+    expect(payload.scheduled_at).toBe('2026-08-29T08:00:00+01:00')
+  })
+
+  it('omits scheduled_at from the payload when not provided', async () => {
+    mockFetchOnce({ ok: true, json: { id: 'resend-id-11' } })
+
+    await sendNewEmailViaResend('signals@arbiris.uk', {
+      to: 'someone@example.com',
+      subject: 'Not scheduled',
+      body: 'body'
+    })
+
+    const init = (fetch as ReturnType<typeof vi.fn>).mock.calls[0][1]
+    const payload = JSON.parse(init.body)
+    expect(payload.scheduled_at).toBeUndefined()
+  })
+})
+
+describe('idempotency key', () => {
+  it('sends a unique Idempotency-Key header on every send call', async () => {
+    mockFetchOnce({ ok: true, json: { id: 'resend-id-12' } })
+    await sendNewEmailViaResend('signals@arbiris.uk', { to: 'a@example.com', subject: 'x', body: 'y' })
+    const firstKey = (fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].headers['Idempotency-Key']
+    expect(typeof firstKey).toBe('string')
+    expect(firstKey.length).toBeGreaterThan(0)
+
+    mockFetchOnce({ ok: true, json: { id: 'resend-id-13' } })
+    await sendNewEmailViaResend('signals@arbiris.uk', { to: 'a@example.com', subject: 'x', body: 'y' })
+    const secondKey = (fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].headers['Idempotency-Key']
+
+    expect(secondKey).not.toBe(firstKey)
+  })
+})
+
+describe('cancelScheduledEmailViaResend', () => {
+  it('cancels a scheduled email and returns success', async () => {
+    mockFetchOnce({ ok: true, json: { id: 'resend-id-14' } })
+
+    const result = await cancelScheduledEmailViaResend('resend-id-14')
+
+    expect(result).toEqual({ success: true, id: 'resend-id-14' })
+    const [url, init] = (fetch as ReturnType<typeof vi.fn>).mock.calls[0]
+    expect(url).toBe('https://api.resend.com/emails/resend-id-14/cancel')
+    expect(init.method).toBe('POST')
+  })
+
+  it('throws RESEND_CANCEL_FAILED when the email has already sent', async () => {
+    mockFetchOnce({ ok: false, status: 400, json: { message: 'Email already sent' } })
+
+    await expect(cancelScheduledEmailViaResend('resend-id-15')).rejects.toMatchObject({
+      code: 'RESEND_CANCEL_FAILED',
+      message: expect.stringContaining('Email already sent')
+    })
+  })
+
+  it('throws MISSING_CONFIG when RESEND_API_KEY is unset', async () => {
+    delete process.env.RESEND_API_KEY
+
+    await expect(cancelScheduledEmailViaResend('resend-id-16')).rejects.toMatchObject({ code: 'MISSING_CONFIG' })
+  })
+})
+
+describe('getEmailStatusViaResend', () => {
+  it('returns the mapped status fields for a sent email', async () => {
+    mockFetchOnce({
+      ok: true,
+      json: {
+        id: 'resend-id-17',
+        last_event: 'delivered',
+        created_at: '2026-08-29T08:00:00Z',
+        subject: 'Hello',
+        to: ['someone@example.com']
+      }
+    })
+
+    const result = await getEmailStatusViaResend('resend-id-17')
+
+    expect(result).toEqual({
+      id: 'resend-id-17',
+      status: 'delivered',
+      scheduled_at: undefined,
+      created_at: '2026-08-29T08:00:00Z',
+      subject: 'Hello',
+      to: ['someone@example.com']
+    })
+    const [url, init] = (fetch as ReturnType<typeof vi.fn>).mock.calls[0]
+    expect(url).toBe('https://api.resend.com/emails/resend-id-17')
+    expect(init.method).toBe('GET')
+  })
+
+  it('reports scheduled status and scheduled_at for a not-yet-sent email', async () => {
+    mockFetchOnce({
+      ok: true,
+      json: { id: 'resend-id-18', last_event: 'scheduled', scheduled_at: '2026-08-29T08:00:00Z' }
+    })
+
+    const result = await getEmailStatusViaResend('resend-id-18')
+
+    expect(result.status).toBe('scheduled')
+    expect(result.scheduled_at).toBe('2026-08-29T08:00:00Z')
+  })
+
+  it('throws RESEND_STATUS_FAILED for an unknown email ID', async () => {
+    mockFetchOnce({ ok: false, status: 404, json: { message: 'Email not found' } })
+
+    await expect(getEmailStatusViaResend('does-not-exist')).rejects.toMatchObject({
+      code: 'RESEND_STATUS_FAILED',
+      message: expect.stringContaining('Email not found')
+    })
+  })
+
+  it('throws MISSING_CONFIG when RESEND_API_KEY is unset', async () => {
+    delete process.env.RESEND_API_KEY
+
+    await expect(getEmailStatusViaResend('resend-id-19')).rejects.toMatchObject({ code: 'MISSING_CONFIG' })
   })
 })

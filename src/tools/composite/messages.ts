@@ -54,6 +54,10 @@ export interface MessagesInput {
   cc?: string
   bcc?: string
   attachments?: SendInput['attachments']
+
+  // Scheduled send params (Resend-only)
+  scheduled_at?: string
+  email_id?: string
 }
 
 /**
@@ -65,6 +69,8 @@ export async function messages(accounts: AccountConfig[], input: MessagesInput):
       case 'new':
       case 'reply':
       case 'forward':
+      case 'cancel_scheduled':
+      case 'get_email_status':
         return await send(accounts, input as unknown as SendInput)
 
       case 'search':
@@ -97,7 +103,7 @@ export async function messages(accounts: AccountConfig[], input: MessagesInput):
       default:
         throw createUnknownActionError(
           input.action,
-          'new, reply, forward, search, read, mark_read, mark_unread, flag, unflag, move, archive, trash'
+          'new, reply, forward, cancel_scheduled, get_email_status, search, read, mark_read, mark_unread, flag, unflag, move, archive, trash'
         )
     }
   })()

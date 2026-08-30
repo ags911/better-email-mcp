@@ -8,13 +8,31 @@ import { resolveSingleAccount } from '../helpers/config.js'
 import { createUnknownActionError, EmailMCPError, withErrorHandling } from '../helpers/errors.js'
 import { appendToFolder, readEmail, resolveSentFolder } from '../helpers/imap-client.js'
 import {
+  cancelScheduledEmailViaResend,
   forwardEmailViaResend,
+  getEmailStatusViaResend,
   replyToEmailViaResend,
   sendNewEmailViaResend,
   shouldUseResend
 } from '../helpers/resend-client.js'
 import type { EmailAttachment, SendEmailOptions, SendResult } from '../helpers/smtp-client.js'
 import { forwardEmail, replyToEmail, sendNewEmail } from '../helpers/smtp-client.js'
+
+/**
+ * Scheduling only exists on the Resend transport — plain SMTP has no way to
+ * hold a message and send it later. Reject early with a clear error rather
+ * than silently sending immediately, since that's the one behavior a caller
+ * relying on scheduling must never get without noticing.
+ */
+function assertSchedulingSupported(options: SendEmailOptions): void {
+  if (options.scheduled_at && !shouldUseResend()) {
+    throw new EmailMCPError(
+      'scheduled_at requires the Resend transport',
+      'SCHEDULING_REQUIRES_RESEND',
+      'Set the RESEND_API_KEY environment variable to use scheduled sending, or omit scheduled_at to send immediately via SMTP'
+    )
+  }
+}
 
 /**
  * Transport dispatch: send via Resend's HTTPS API when RESEND_API_KEY is set
@@ -24,10 +42,12 @@ import { forwardEmail, replyToEmail, sendNewEmail } from '../helpers/smtp-client
  * providers); leave it unset to keep using SMTP as before.
  */
 async function dispatchSendNew(account: AccountConfig, options: SendEmailOptions): Promise<SendResult> {
+  assertSchedulingSupported(options)
   return shouldUseResend() ? sendNewEmailViaResend(account.email, options) : sendNewEmail(account, options)
 }
 
 async function dispatchReply(account: AccountConfig, options: SendEmailOptions): Promise<SendResult> {
+  assertSchedulingSupported(options)
   return shouldUseResend() ? replyToEmailViaResend(account.email, options) : replyToEmail(account, options)
 }
 
@@ -35,6 +55,7 @@ async function dispatchForward(
   account: AccountConfig,
   options: SendEmailOptions & { original_body: string }
 ): Promise<SendResult> {
+  assertSchedulingSupported(options)
   return shouldUseResend() ? forwardEmailViaResend(account.email, options) : forwardEmail(account, options)
 }
 
@@ -66,9 +87,9 @@ async function saveToSent(account: AccountConfig, result: SendResult): Promise<b
 }
 
 export interface SendInput {
-  action: 'new' | 'reply' | 'forward'
+  action: 'new' | 'reply' | 'forward' | 'cancel_scheduled' | 'get_email_status'
 
-  // Required for all
+  // Required for new/reply/forward
   account: string
   body: string
 
@@ -88,6 +109,14 @@ export interface SendInput {
 
   // Optional file attachments, symmetric with the attachments download shape
   attachments?: EmailAttachment[]
+
+  // `new` only, Resend-only: ISO 8601 timestamp or natural language (e.g. "in 2 hours").
+  // Rejected with SCHEDULING_REQUIRES_RESEND when RESEND_API_KEY is unset.
+  scheduled_at?: string
+
+  // Required for cancel_scheduled/get_email_status: the message_id returned
+  // from a prior new/reply/forward call made through the Resend transport.
+  email_id?: string
 }
 
 /**
@@ -95,6 +124,16 @@ export interface SendInput {
  */
 export async function send(accounts: AccountConfig[], input: SendInput): Promise<any> {
   return withErrorHandling(async () => {
+    // cancel_scheduled/get_email_status act on a Resend message_id directly
+    // and don't involve a sending account, so they skip the checks below.
+    if (input.action === 'cancel_scheduled') {
+      return await handleCancelScheduled(input)
+    }
+
+    if (input.action === 'get_email_status') {
+      return await handleGetStatus(input)
+    }
+
     if (!input.account) {
       throw new EmailMCPError(
         'account is required for send operations',
@@ -118,9 +157,50 @@ export async function send(accounts: AccountConfig[], input: SendInput): Promise
         return await handleForward(accounts, input)
 
       default:
-        throw createUnknownActionError(input.action, 'new, reply, forward')
+        throw createUnknownActionError(input.action, 'new, reply, forward, cancel_scheduled, get_email_status')
     }
   })()
+}
+
+/**
+ * Cancel a Resend-scheduled email before it sends.
+ */
+async function handleCancelScheduled(input: SendInput): Promise<any> {
+  if (!input.email_id) {
+    throw new EmailMCPError(
+      'email_id is required for cancel_scheduled',
+      'VALIDATION_ERROR',
+      'Provide the message_id returned when the email was scheduled'
+    )
+  }
+
+  const result = await cancelScheduledEmailViaResend(input.email_id)
+
+  return {
+    action: 'cancel_scheduled',
+    email_id: input.email_id,
+    success: result.success
+  }
+}
+
+/**
+ * Look up delivery/schedule status for a message sent via Resend.
+ */
+async function handleGetStatus(input: SendInput): Promise<any> {
+  if (!input.email_id) {
+    throw new EmailMCPError(
+      'email_id is required for get_email_status',
+      'VALIDATION_ERROR',
+      'Provide the message_id returned when the email was sent or scheduled'
+    )
+  }
+
+  const status = await getEmailStatusViaResend(input.email_id)
+
+  return {
+    action: 'get_email_status',
+    ...status
+  }
 }
 
 /**
@@ -143,10 +223,13 @@ async function handleNew(accounts: AccountConfig[], input: SendInput): Promise<a
     body: input.body,
     cc: input.cc,
     bcc: input.bcc,
-    attachments: input.attachments
+    attachments: input.attachments,
+    scheduled_at: input.scheduled_at
   })
 
-  const saved_to_sent = await saveToSent(account, result)
+  // A scheduled send hasn't happened yet, so there's nothing to save to Sent
+  // until it actually fires — Resend does not notify this server when that occurs.
+  const saved_to_sent = input.scheduled_at ? false : await saveToSent(account, result)
 
   return {
     action: 'new',
@@ -155,6 +238,8 @@ async function handleNew(accounts: AccountConfig[], input: SendInput): Promise<a
     subject: input.subject,
     success: result.success,
     message_id: result.message_id,
+    status: input.scheduled_at ? 'scheduled' : 'sent',
+    scheduled_at: input.scheduled_at,
     saved_to_sent
   }
 }

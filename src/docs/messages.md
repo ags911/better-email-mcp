@@ -1,7 +1,7 @@
 # Messages Tool - Full Documentation
 
 ## Overview
-Email messages: search, read, mark_read, mark_unread, flag, unflag, move, archive, trash, new, reply, forward.
+Email messages: search, read, mark_read, mark_unread, flag, unflag, move, archive, trash, new, reply, forward, cancel_scheduled, get_email_status.
 
 ## Important
 - **search** defaults to all configured accounts. Filter with `account` param.
@@ -11,6 +11,8 @@ Email messages: search, read, mark_read, mark_unread, flag, unflag, move, archiv
 - **reply** automatically sets In-Reply-To and References headers for threading
 - **forward** includes the original email body with a separator
 - Outbound bodies support plain text or HTML; do not mix both
+- **scheduled_at** (on `new` only) requires the Resend transport (`RESEND_API_KEY` set on the server) — plain SMTP has no scheduling concept and this errors with `SCHEDULING_REQUIRES_RESEND` instead of silently sending immediately
+- A scheduled send is not written to Sent until it actually fires, since the server has no callback for that; `cancel_scheduled` and `get_email_status` also require the Resend transport
 
 ## Actions
 
@@ -85,12 +87,29 @@ Delete emails (moves to trash).
 ```
 
 ### new
-Send a new email via SMTP.
+Send a new email via SMTP (or Resend, when `RESEND_API_KEY` is set on the server).
 ```json
 {"action": "new", "account": "user@gmail.com", "to": "recipient@example.com", "subject": "Hello", "body": "Hi there!"}
 ```
 ```json
 {"action": "new", "account": "user@gmail.com", "to": "a@example.com", "subject": "Update", "body": "See details.", "cc": "b@example.com", "bcc": "c@example.com"}
+```
+
+Add `scheduled_at` to schedule instead of sending immediately — requires the Resend transport. Accepts ISO 8601 or natural language (e.g. `"in 2 hours"`), up to 30 days ahead. The response's `message_id` doubles as the schedule ID for `cancel_scheduled`/`get_email_status`.
+```json
+{"action": "new", "account": "user@arbiris.uk", "to": "recipient@example.com", "subject": "Hello", "body": "Hi there!", "scheduled_at": "2026-08-29T08:00:00+01:00"}
+```
+
+### cancel_scheduled
+Cancel a scheduled email before it sends. Resend-only. Fails if the email has already sent.
+```json
+{"action": "cancel_scheduled", "email_id": "<message_id from the scheduled new call>"}
+```
+
+### get_email_status
+Check delivery/schedule status of a message sent via Resend (`status` is one of Resend's event names, e.g. `scheduled`, `sent`, `delivered`, `bounced`, `complained`, `canceled`).
+```json
+{"action": "get_email_status", "email_id": "<message_id from a prior new/reply/forward call>"}
 ```
 
 ### reply
@@ -123,6 +142,8 @@ Forward an email. The original body is appended with a separator.
 - `cc` - CC recipients (comma-separated, optional)
 - `bcc` - BCC recipients (comma-separated, optional)
 - `attachments` - Base64 file attachments, max 10 files and 25MB decoded total
+- `scheduled_at` - ISO 8601 or natural language schedule time for `new` (optional, Resend transport only)
+- `email_id` - Resend message ID, required for `cancel_scheduled` and `get_email_status`
 
 ## Outbound response and provider behavior
 

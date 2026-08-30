@@ -18,12 +18,16 @@ vi.mock('../helpers/resend-client.js', () => ({
   sendNewEmailViaResend: vi.fn(),
   replyToEmailViaResend: vi.fn(),
   forwardEmailViaResend: vi.fn(),
+  cancelScheduledEmailViaResend: vi.fn(),
+  getEmailStatusViaResend: vi.fn(),
   shouldUseResend: vi.fn().mockReturnValue(false)
 }))
 
 import { appendToFolder, readEmail, resolveSentFolder } from '../helpers/imap-client.js'
 import {
+  cancelScheduledEmailViaResend,
   forwardEmailViaResend,
+  getEmailStatusViaResend,
   replyToEmailViaResend,
   sendNewEmailViaResend,
   shouldUseResend
@@ -40,6 +44,8 @@ const mockAppendToFolder = vi.mocked(appendToFolder)
 const mockSendNewEmailViaResend = vi.mocked(sendNewEmailViaResend)
 const mockReplyToEmailViaResend = vi.mocked(replyToEmailViaResend)
 const mockForwardEmailViaResend = vi.mocked(forwardEmailViaResend)
+const mockCancelScheduledEmailViaResend = vi.mocked(cancelScheduledEmailViaResend)
+const mockGetEmailStatusViaResend = vi.mocked(getEmailStatusViaResend)
 const mockShouldUseResend = vi.mocked(shouldUseResend)
 
 const gmailAccounts: AccountConfig[] = [
@@ -640,6 +646,8 @@ describe('send - new result fields', () => {
       subject: 'Full Result',
       success: true,
       message_id: '<new-full@gmail.com>',
+      status: 'sent',
+      scheduled_at: undefined,
       saved_to_sent: false
     })
   })
@@ -813,5 +821,134 @@ describe('transport dispatch', () => {
     // so saveToSent's `!result.raw` check behaves identically either way.
     expect(result.saved_to_sent).toBe(false)
     expect(mockAppendToFolder).not.toHaveBeenCalled()
+  })
+})
+
+// ============================================================================
+// scheduled sending
+// ============================================================================
+describe('send - scheduled new', () => {
+  it('passes scheduled_at through to the Resend transport and reports status: scheduled', async () => {
+    mockShouldUseResend.mockReturnValue(true)
+    mockSendNewEmailViaResend.mockResolvedValue({ success: true, message_id: 'resend-scheduled-id' })
+
+    const result = await send(outlookAccounts, {
+      action: 'new',
+      account: 'user1@outlook.com',
+      to: 'someone@example.com',
+      subject: 'Test',
+      body: 'body',
+      scheduled_at: '2026-08-29T08:00:00+01:00'
+    })
+
+    expect(mockSendNewEmailViaResend).toHaveBeenCalledWith(
+      'user1@outlook.com',
+      expect.objectContaining({ scheduled_at: '2026-08-29T08:00:00+01:00' })
+    )
+    expect(result.status).toBe('scheduled')
+    expect(result.scheduled_at).toBe('2026-08-29T08:00:00+01:00')
+    expect(result.message_id).toBe('resend-scheduled-id')
+  })
+
+  it('does not attempt save-to-sent for a scheduled (not-yet-sent) email', async () => {
+    mockShouldUseResend.mockReturnValue(true)
+    mockSendNewEmailViaResend.mockResolvedValue({
+      success: true,
+      message_id: 'resend-scheduled-id',
+      raw: Buffer.from('raw-bytes')
+    })
+
+    const result = await send(outlookAccounts, {
+      action: 'new',
+      account: 'user1@outlook.com',
+      to: 'someone@example.com',
+      subject: 'Test',
+      body: 'body',
+      scheduled_at: '2026-08-29T08:00:00+01:00'
+    })
+
+    expect(result.saved_to_sent).toBe(false)
+    expect(mockAppendToFolder).not.toHaveBeenCalled()
+  })
+
+  it('reports status: sent and no scheduled_at for an immediate send', async () => {
+    mockSendNewEmail.mockResolvedValue({ success: true, message_id: '<smtp-id@gmail.com>' })
+
+    const result = await send(gmailAccounts, {
+      action: 'new',
+      account: 'user1@gmail.com',
+      to: 'someone@example.com',
+      subject: 'Test',
+      body: 'body'
+    })
+
+    expect(result.status).toBe('sent')
+    expect(result.scheduled_at).toBeUndefined()
+  })
+
+  it('rejects scheduled_at when the SMTP transport is active (no RESEND_API_KEY)', async () => {
+    mockShouldUseResend.mockReturnValue(false)
+
+    await expect(
+      send(gmailAccounts, {
+        action: 'new',
+        account: 'user1@gmail.com',
+        to: 'someone@example.com',
+        subject: 'Test',
+        body: 'body',
+        scheduled_at: '2026-08-29T08:00:00+01:00'
+      })
+    ).rejects.toMatchObject({ code: 'SCHEDULING_REQUIRES_RESEND' })
+
+    expect(mockSendNewEmail).not.toHaveBeenCalled()
+  })
+})
+
+// ============================================================================
+// cancel_scheduled / get_email_status
+// ============================================================================
+describe('send - cancel_scheduled', () => {
+  it('cancels a scheduled email by id', async () => {
+    mockCancelScheduledEmailViaResend.mockResolvedValue({ success: true, id: 'resend-id-1' })
+
+    const result = await send(gmailAccounts, {
+      action: 'cancel_scheduled',
+      email_id: 'resend-id-1'
+    } as never)
+
+    expect(mockCancelScheduledEmailViaResend).toHaveBeenCalledWith('resend-id-1')
+    expect(result).toEqual({ action: 'cancel_scheduled', email_id: 'resend-id-1', success: true })
+  })
+
+  it('requires email_id', async () => {
+    await expect(send(gmailAccounts, { action: 'cancel_scheduled' } as never)).rejects.toMatchObject({
+      code: 'VALIDATION_ERROR'
+    })
+    expect(mockCancelScheduledEmailViaResend).not.toHaveBeenCalled()
+  })
+})
+
+describe('send - get_email_status', () => {
+  it('returns status for a message id', async () => {
+    mockGetEmailStatusViaResend.mockResolvedValue({
+      id: 'resend-id-1',
+      status: 'delivered',
+      created_at: '2026-08-29T08:00:00Z'
+    })
+
+    const result = await send(gmailAccounts, {
+      action: 'get_email_status',
+      email_id: 'resend-id-1'
+    } as never)
+
+    expect(mockGetEmailStatusViaResend).toHaveBeenCalledWith('resend-id-1')
+    expect(result).toMatchObject({ action: 'get_email_status', id: 'resend-id-1', status: 'delivered' })
+  })
+
+  it('requires email_id', async () => {
+    await expect(send(gmailAccounts, { action: 'get_email_status' } as never)).rejects.toMatchObject({
+      code: 'VALIDATION_ERROR'
+    })
+    expect(mockGetEmailStatusViaResend).not.toHaveBeenCalled()
   })
 })

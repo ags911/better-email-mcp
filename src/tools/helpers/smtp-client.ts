@@ -25,6 +25,9 @@ export interface SendEmailOptions {
   in_reply_to?: string
   references?: string
   attachments?: EmailAttachment[]
+  // Resend-only: ISO 8601 timestamp or natural language (e.g. "in 2 hours").
+  // Unsupported over direct SMTP — see dispatchSendNew in send.ts.
+  scheduled_at?: string
 }
 
 export interface SendResult {
