@@ -9,6 +9,8 @@ MCP Server cho Email (IMAP/SMTP). TypeScript, Node.js >= 24, bun, ESM.
 
 This is `ags911/better-email-mcp`, a fork of `n24q02m/better-email-mcp` (upstream — actively maintained, has its own bot-authored `renovate/*`, `bolt-*`, `jules-*` branches; only ever merge `upstream/main`, not those). It's the live MCP server for four `@arbiris.uk` mailboxes, used from Claude for inbox work and cold outreach (the "03 Cold Outreach" workstream). Everything in the rest of this file below the `---` is upstream's own doc and describes upstream's internal tooling (CD Pipeline, E2E harness, AWS SSM secrets) which **this fork does not use** — treat those sections as background reference only, not as this fork's actual process.
 
+This section is the AI-agent-facing SOP (branching, testing, shipping a change). **[DEPLOYMENT.md](DEPLOYMENT.md)** is the human-facing counterpart — required env vars, the Railway Volume, one-time mailbox setup via `/authorize`, Resend webhook setup, and the security model. Keep both in sync when either changes; don't duplicate content between them, cross-reference instead.
+
 ### Deployment architecture — the one thing to never assume
 
 The live server runs on **Railway** (`better-email-mcp-production.up.railway.app`), pulling a **manually-built-and-pushed Docker Hub image tag** (`ags911/better-email-mcp:<tag>`). Railway is **not** wired to auto-deploy from GitHub.

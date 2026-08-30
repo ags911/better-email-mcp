@@ -1,5 +1,7 @@
 # Better Email MCP
 
+> **This is a fork (`ags911/better-email-mcp`) deployed on Railway, not the setup described below.** Everything from here to [Trust Model](#trust-model) documents the original open-source project (npm install, Smithery, Cloudflare Workers self-hosting) — none of it is how this fork actually runs. For this fork's real deployment (Railway + Docker Hub, required env vars, credential setup, Resend webhook, security model), see **[DEPLOYMENT.md](DEPLOYMENT.md)**.
+
 mcp-name: io.github.n24q02m/better-email-mcp
 
 **IMAP/SMTP email for AI agents -- read, send, organize folders, and manage attachments across multiple accounts, with auto-discovery.**
@@ -410,6 +412,8 @@ for the encryption and trust details.
 ## Trust Model
 
 This plugin implements **TC-NearZK**. Storage durability depends on the deployment mode; see the [mcp-core trust model](https://mcp.n24q02m.com/servers/mcp-core/trust-model/) for full classification.
+
+> **This table describes the upstream defaults, not this fork.** This fork's "HTTP local Docker" row is out of date here — it now defaults to encrypted on-disk storage (`LocalFsBackend`), durable across restarts given a mounted Volume, not the in-memory store below. See [DEPLOYMENT.md](DEPLOYMENT.md).
 
 | Mode | Storage | Encryption | Who can read your data? |
 |---|---|---|---|
