@@ -36,6 +36,7 @@ Shipping a webhook-dependent change additionally needs the URL registered in Res
 - Before assuming a merge will conflict, check ancestry first: `git merge-base --is-ancestor <A> <B>` and `git log A..B --oneline`. Don't guess — it's cheap to check, and upstream has independently fixed things we were about to fix ourselves (same bug, sometimes the same exact solution).
 - For an isolated/unrelated fix (a stray type error, a dependency bump), branch off `main`, not off whatever feature branch is currently checked out — keeps one concern per branch and keeps history reviewable.
 - Once a branch is fully merged into `main`, delete it (local + `origin`) after confirming with `git merge-base --is-ancestor origin/<branch> origin/main`. Don't let merged branches pile up.
+- Deferred feature ideas go in **GitHub Issues** (labels `enhancement` + `wishlist`), not a markdown file in the repo — Issues are enabled on this fork specifically for this. Milestones are the wrong tool for this (they group work toward a shipping target; these are undated backlog ideas). Close an issue with a reference to the PR that resolves it so the original reasoning stays linked to the eventual fix.
 
 ### Verification sequence — run all of this before calling anything done
 
