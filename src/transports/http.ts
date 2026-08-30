@@ -46,20 +46,36 @@ const SERVER_NAME = 'better-email-mcp'
 const IMAP_CONNECT_TIMEOUT_MS = 15_000
 
 /**
- * Select the per-sub credential store. cf-kv backend -> KV write-through
- * PerSubCredStore (durable across container recreate; the Cloudflare deploy
- * store). Any other backend (stdio / local single-process) -> ephemeral
- * in-memory store. Read once at module load; on CF, MCP_STORAGE_BACKEND=cf-kv is
- * set by wrangler vars, so the durable KV store is selected there.
+ * Select the per-sub credential store.
+ *
+ * `PerSubCredStore` delegates to mcp-core's `backendFromEnv()`: `cf-kv` (with
+ * `MCP_KV_BASE_URL`) on Cloudflare, otherwise its default `LocalFsBackend`
+ * (`~/.better-email-mcp/subs/<sub>/config.json`, same AES-256-GCM encryption
+ * either way). On this fork's Railway deployment, that path is durable as
+ * long as it's under a mounted Volume — Railway doesn't recreate containers
+ * the way Cloudflare does, but a redeploy's fresh container still starts with
+ * an empty *ephemeral* filesystem unless a Volume is mounted over that path.
+ * Without one, credentials submitted via `/authorize` are lost on every
+ * redeploy, forcing re-entry of every mailbox's email + app password.
+ *
+ * Falls back to the fully ephemeral `InMemoryCredStore` only if
+ * `PerSubCredStore` construction itself throws (e.g. an explicitly-set but
+ * unsupported `MCP_STORAGE_BACKEND` value) — a misconfiguration should
+ * degrade to today's existing behavior, not crash the server at boot.
  */
-function selectCredStore(): CredStoreLike {
-  if ((process.env.MCP_STORAGE_BACKEND ?? '').toLowerCase() === 'cf-kv') {
+export function selectCredStore(): CredStoreLike {
+  try {
     return new PerSubCredStore()
+  } catch (err) {
+    console.error(
+      `[${SERVER_NAME}] Failed to initialize durable credential store, falling back to in-memory ` +
+        `(credentials will NOT survive a restart): ${(err as Error).message}`
+    )
+    return new InMemoryCredStore()
   }
-  return new InMemoryCredStore()
 }
 
-/** Module-singleton per-user credential store (KV on CF, in-memory otherwise). */
+/** Module-singleton per-user credential store (durable — KV on CF, local-fs elsewhere — unless construction fails). */
 const credStore = selectCredStore()
 
 /**
@@ -393,18 +409,20 @@ export async function startHttp(): Promise<void> {
     }
   }
 
-  // Startup KV readiness probe (cf-kv / PerSubCredStore only). Confirms the
-  // container -> Worker `kv.internal` outbound path is wired BEFORE the first
-  // credential write, so a broken binding fails loudly at boot instead of
-  // silently dropping the first user's credentials. InMemoryCredStore has no
-  // `ready`, so this is a no-op for stdio / local single-process deploys.
+  // Startup credential-store readiness probe (PerSubCredStore only — every
+  // backendFromEnv() choice, cf-kv or local-fs). Confirms the backend is
+  // actually reachable/writable BEFORE the first credential write, so a
+  // broken binding (CF) or an unwritable path (local-fs, e.g. no Volume
+  // mounted) fails loudly at boot instead of silently dropping the first
+  // user's credentials. InMemoryCredStore has no `ready`, so this is a no-op
+  // when PerSubCredStore construction itself failed and fell back to it.
   if (credStore.ready) {
     try {
       await credStore.ready()
-      console.error(`[${SERVER_NAME}] KV store reachable (kv.internal outbound OK)`)
+      console.error(`[${SERVER_NAME}] Credential store reachable`)
     } catch (err) {
       console.error(
-        `[${SERVER_NAME}] KV store UNREACHABLE — per-user credentials will NOT persist: ${(err as Error).message}`
+        `[${SERVER_NAME}] Credential store UNREACHABLE — per-user credentials will NOT persist: ${(err as Error).message}`
       )
     }
   }

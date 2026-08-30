@@ -1,11 +1,38 @@
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { runHttpServer, writeConfig } from '@n24q02m/mcp-core'
+import { setHomeDirForTesting } from '@n24q02m/mcp-core/storage'
 import { ImapFlow } from 'imapflow'
-import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, type Mock, vi } from 'vitest'
 import { getMarkSetupComplete, resolveCredentialState, setSetupUrl, setState } from '../credential-state.js'
 import { type AccountConfig, loadConfig, parseCredentials } from '../tools/helpers/config.js'
 import { initiateOutlookDeviceCode, isOutlookDomain } from '../tools/helpers/oauth2.js'
 import { registerTools } from '../tools/registry.js'
+
+// selectCredStore() now defaults to the durable PerSubCredStore, which
+// resolves to LocalFsBackend when MCP_STORAGE_BACKEND is unset (this file's
+// default, matching Railway). Redirect its disk I/O to a throwaway temp
+// directory instead of the real machine's home directory, and provide the
+// CREDENTIAL_SECRET that PerPluginStore's encryption requires — without both,
+// every test that exercises onCredentialsSaved's real save path or
+// startHttp()'s readiness probe would touch the developer/CI machine's actual
+// home directory and fail without a CREDENTIAL_SECRET set.
+const testHomeDir = mkdtempSync(join(tmpdir(), 'better-email-mcp-http-test-'))
+const originalCredentialSecret = process.env.CREDENTIAL_SECRET
+
+beforeAll(() => {
+  setHomeDirForTesting(testHomeDir)
+  process.env.CREDENTIAL_SECRET = 'test-credential-secret'
+})
+
+afterAll(() => {
+  setHomeDirForTesting(null)
+  if (originalCredentialSecret === undefined) delete process.env.CREDENTIAL_SECRET
+  else process.env.CREDENTIAL_SECRET = originalCredentialSecret
+  rmSync(testHomeDir, { recursive: true, force: true })
+})
 
 // Mock dependencies
 vi.mock('@modelcontextprotocol/sdk/server/index.js', () => ({
@@ -56,8 +83,10 @@ vi.mock('../auth/outlook-device-code.js', () => ({
   })
 }))
 
+import { PerSubCredStore } from '../auth/cred-store.js'
 // We need to import startHttp AFTER mocks are set up
-import { resolveSetupBaseUrl, startHttp } from './http.js'
+import { InMemoryCredStore } from '../auth/in-memory-cred-store.js'
+import { resolveSetupBaseUrl, selectCredStore, startHttp } from './http.js'
 
 describe('resolveSetupBaseUrl', () => {
   it('prefers PUBLIC_URL over the bind address', () => {
@@ -558,5 +587,45 @@ describe('http transport', () => {
         expect(result.text).not.toContain('ok@gmail.com')
       })
     })
+  })
+})
+
+describe('selectCredStore', () => {
+  const originalBackend = process.env.MCP_STORAGE_BACKEND
+  const originalKvBaseUrl = process.env.MCP_KV_BASE_URL
+
+  afterEach(() => {
+    if (originalBackend === undefined) delete process.env.MCP_STORAGE_BACKEND
+    else process.env.MCP_STORAGE_BACKEND = originalBackend
+    if (originalKvBaseUrl === undefined) delete process.env.MCP_KV_BASE_URL
+    else process.env.MCP_KV_BASE_URL = originalKvBaseUrl
+  })
+
+  it('defaults to the durable PerSubCredStore (local-fs backend) when MCP_STORAGE_BACKEND is unset', () => {
+    delete process.env.MCP_STORAGE_BACKEND
+    expect(selectCredStore()).toBeInstanceOf(PerSubCredStore)
+  })
+
+  it('uses the durable PerSubCredStore for an explicit cf-kv backend', () => {
+    process.env.MCP_STORAGE_BACKEND = 'cf-kv'
+    process.env.MCP_KV_BASE_URL = 'http://kv.internal'
+    expect(selectCredStore()).toBeInstanceOf(PerSubCredStore)
+  })
+
+  it('falls back to InMemoryCredStore (and logs) if cf-kv is set without MCP_KV_BASE_URL', () => {
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    process.env.MCP_STORAGE_BACKEND = 'cf-kv'
+    delete process.env.MCP_KV_BASE_URL
+
+    expect(selectCredStore()).toBeInstanceOf(InMemoryCredStore)
+    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('falling back to in-memory'))
+  })
+
+  it('falls back to InMemoryCredStore (and logs) for an unrecognized MCP_STORAGE_BACKEND value', () => {
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    process.env.MCP_STORAGE_BACKEND = 'not-a-real-backend'
+
+    expect(selectCredStore()).toBeInstanceOf(InMemoryCredStore)
+    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('falling back to in-memory'))
   })
 })

@@ -1,20 +1,23 @@
 /**
- * KV write-through per-sub credential store (Cloudflare deploy).
+ * Durable write-through per-sub credential store.
  *
- * The single per-sub store for HTTP multi-user mode on Cloudflare: it replaces
- * the ephemeral `InMemoryCredStore` so credentials AND Outlook OAuth tokens
- * survive container delete+recreate without re-auth. Everything for one subject
- * lives in ONE encrypted blob at `better-email/subs/<sub>/config`
- * (`{ accounts, outlookTokens? }`) — the embed design (per the 2026-06-16
- * decision record): no separate `tokens/<provider>` namespace, mirroring the
- * verified-live better-notion-mcp pattern.
+ * The single per-sub store for HTTP multi-user mode: it replaces the ephemeral
+ * `InMemoryCredStore` so credentials AND Outlook OAuth tokens survive
+ * container recreation without re-auth. Everything for one subject lives in
+ * ONE encrypted blob at `better-email/subs/<sub>/config` (`{ accounts,
+ * outlookTokens? }`) — the embed design (per the 2026-06-16 decision record):
+ * no separate `tokens/<provider>` namespace, mirroring the verified-live
+ * better-notion-mcp pattern.
  *
- * The in-memory Map is a read cache; the durable layer is Workers KV reached via
- * the Worker's `kv.internal` outbound handler (MCP_KV_BASE_URL). The blob is
- * encrypted by mcp-core's PerPluginStore (AES-256-GCM) before it hits KV — this
- * module NEVER re-implements crypto. On load the decrypted blob is schema-checked
- * before it is trusted (a malformed blob is treated as no-credentials → re-auth,
- * never thrown to the caller).
+ * The backend is whatever `backendFromEnv()` selects: Workers KV reached via
+ * the Worker's `kv.internal` outbound handler on Cloudflare (`MCP_KV_BASE_URL`),
+ * or `LocalFsBackend` (disk, under a mounted Volume for durability) everywhere
+ * else, including this fork's Railway deployment. The in-memory Map is a read
+ * cache regardless of backend. The blob is encrypted by mcp-core's
+ * PerPluginStore (AES-256-GCM, keyed by `CREDENTIAL_SECRET`) before it hits
+ * the backend — this module NEVER re-implements crypto. On load the decrypted
+ * blob is schema-checked before it is trusted (a malformed blob is treated as
+ * no-credentials → re-auth, never thrown to the caller).
  */
 import { backendFromEnv, CfKvBackend, PerPluginStore } from '@n24q02m/mcp-core/storage'
 import type { CredentialPayload, CredStoreLike } from './in-memory-cred-store.js'
@@ -137,11 +140,31 @@ export class PerSubCredStore implements CredStoreLike {
     return [...this.cache.keys()]
   }
 
-  // Startup readiness probe: confirm the container -> Worker `kv.internal`
-  // outbound path is wired BEFORE the first credential write (hits the Worker's
-  // kvOutbound `__ready` branch). Throws if outbound interception is broken so
-  // the HTTP transport can log it loudly at startup.
+  /**
+   * Startup readiness probe: confirm the backend is actually reachable/
+   * writable BEFORE the first credential write, so a broken binding (CF) or
+   * an unwritable path (local-fs — e.g. no Volume mounted on Railway) fails
+   * loudly at startup instead of silently on a user's first `/authorize`
+   * submission.
+   *
+   * The `'__ready'` key only has meaning against `CfKvBackend`: Cloudflare's
+   * Worker recognizes that exact string as a lightweight, non-mutating
+   * outbound-connectivity ping (the `kv.internal` handler's dedicated
+   * `__ready` branch) — it is not a real KV read. `LocalFsBackend` has no
+   * such special-cased route, and its structured key format
+   * (`plugin/subs/<sub>/config`) actively rejects a bare `'__ready'` string
+   * as malformed, so reusing that key there would always throw regardless of
+   * whether the store is actually healthy. For any backend other than
+   * `CfKvBackend`, do a real write+delete round trip on a disposable,
+   * validly-shaped key instead — a genuine liveness check for that case.
+   */
   async ready(): Promise<void> {
-    await this.backend.get('__ready')
+    if (this.backend instanceof CfKvBackend) {
+      await this.backend.get('__ready')
+      return
+    }
+    const probeKey = `${PLUGIN_NAME}/subs/__readiness_probe__/config`
+    await this.backend.put(probeKey, Buffer.from('ready'))
+    await this.backend.delete(probeKey)
   }
 }
