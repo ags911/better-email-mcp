@@ -42,6 +42,9 @@ export interface EmailAccountCard {
   password?: string
   imap_host?: string
   imap_port?: string
+  smtp_host?: string
+  smtp_port?: string
+  smtp_security?: string
 }
 
 /**
@@ -50,8 +53,11 @@ export interface EmailAccountCard {
  * live client-side in the forked `credential-form.ts`:
  *  - Outlook/Hotmail/Live: the email only (server runs the device-code flow;
  *    any password typed is ignored).
- *  - Others: `email:password[:imap_host[:imap_port]]`. The port is appended
- *    only when the host carries no colon of its own.
+ *  - Others: `email:password[:imap_host[:imap_port[:smtp_host[:smtp_port[:smtp_security]]]]]`,
+ *    matching the 7-part format `parsePasswordAndHost` in `tools/helpers/config.ts`
+ *    parses. SMTP fields are only meaningful — and only encoded — when an IMAP
+ *    host is also present, since the format is positional: SMTP overrides can't
+ *    be expressed without the IMAP host/port segments preceding them.
  * Cards without an email — and non-Outlook cards without a password — are
  * skipped, matching the fork's submit-time filter.
  */
@@ -75,9 +81,20 @@ export function assembleEmailCredentials(accounts: EmailAccountCard[] | undefine
     }
     const imapHost = (account?.imap_host ?? '').trim()
     if (imapHost) {
-      const imapPort = (account?.imap_port ?? '').trim()
-      const imapSpec = imapPort && !imapHost.includes(':') ? `${imapHost}:${imapPort}` : imapHost
-      parts.push(`${email}:${password}:${imapSpec}`)
+      const imapPort = (account?.imap_port ?? '').trim() || '993'
+      const smtpHost = (account?.smtp_host ?? '').trim()
+      if (smtpHost) {
+        const smtpPort = (account?.smtp_port ?? '').trim()
+        const smtpSecurity = (account?.smtp_security ?? '').trim().toLowerCase()
+        const smtpSegments = [smtpHost]
+        if (smtpPort) smtpSegments.push(smtpPort)
+        if (smtpSecurity) smtpSegments.push(smtpSecurity)
+        parts.push(`${email}:${password}:${imapHost}:${imapPort}:${smtpSegments.join(':')}`)
+      } else {
+        const imapPortRaw = (account?.imap_port ?? '').trim()
+        const imapSpec = imapPortRaw && !imapHost.includes(':') ? `${imapHost}:${imapPortRaw}` : imapHost
+        parts.push(`${email}:${password}:${imapSpec}`)
+      }
     } else {
       parts.push(`${email}:${password}`)
     }

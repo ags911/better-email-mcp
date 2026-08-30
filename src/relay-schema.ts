@@ -63,6 +63,35 @@ export const RELAY_SCHEMA: RelayConfigSchema = {
         validation: '^\\d*$',
         placeholder: '993',
         helpText: 'Optional. Default 993. Set a custom port for a local IMAP proxy.'
+      },
+      {
+        key: 'smtp_host',
+        label: 'SMTP Host (optional override)',
+        type: 'text',
+        required: false,
+        validation: '^\\S*$',
+        placeholder: 'smtp.example.com',
+        helpText:
+          'Optional. Leave empty to auto-guess from the IMAP host or provider. Set this when SMTP runs on a different host than IMAP (e.g. some cPanel/custom-domain mail setups).'
+      },
+      {
+        key: 'smtp_port',
+        label: 'SMTP Port',
+        type: 'text',
+        required: false,
+        validation: '^\\d*$',
+        placeholder: '465',
+        helpText: 'Optional. Default depends on security setting (465 for TLS/SSL, 587 for STARTTLS, 25 for none).'
+      },
+      {
+        key: 'smtp_security',
+        label: 'SMTP Security',
+        type: 'text',
+        required: false,
+        validation: '^(tls|ssl|starttls|none)?$',
+        placeholder: 'tls',
+        helpText:
+          'Optional. One of: tls / ssl (implicit TLS, port 465), starttls (port 587), none (plain, port 25). Leave blank to default to starttls.'
       }
     ]
   }
