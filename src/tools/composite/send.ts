@@ -7,8 +7,36 @@ import type { AccountConfig } from '../helpers/config.js'
 import { resolveSingleAccount } from '../helpers/config.js'
 import { createUnknownActionError, EmailMCPError, withErrorHandling } from '../helpers/errors.js'
 import { appendToFolder, readEmail, resolveSentFolder } from '../helpers/imap-client.js'
-import type { EmailAttachment, SendResult } from '../helpers/smtp-client.js'
+import {
+  forwardEmailViaResend,
+  replyToEmailViaResend,
+  sendNewEmailViaResend,
+  shouldUseResend
+} from '../helpers/resend-client.js'
+import type { EmailAttachment, SendEmailOptions, SendResult } from '../helpers/smtp-client.js'
 import { forwardEmail, replyToEmail, sendNewEmail } from '../helpers/smtp-client.js'
+
+/**
+ * Transport dispatch: send via Resend's HTTPS API when RESEND_API_KEY is set
+ * (see resend-client.ts), otherwise fall back to direct SMTP (smtp-client.ts).
+ * This is a deployment-wide switch, not per-account — set the env var when
+ * outbound SMTP ports are blocked by the host (e.g. free-tier PaaS
+ * providers); leave it unset to keep using SMTP as before.
+ */
+async function dispatchSendNew(account: AccountConfig, options: SendEmailOptions): Promise<SendResult> {
+  return shouldUseResend() ? sendNewEmailViaResend(account.email, options) : sendNewEmail(account, options)
+}
+
+async function dispatchReply(account: AccountConfig, options: SendEmailOptions): Promise<SendResult> {
+  return shouldUseResend() ? replyToEmailViaResend(account.email, options) : replyToEmail(account, options)
+}
+
+async function dispatchForward(
+  account: AccountConfig,
+  options: SendEmailOptions & { original_body: string }
+): Promise<SendResult> {
+  return shouldUseResend() ? forwardEmailViaResend(account.email, options) : forwardEmail(account, options)
+}
 
 /**
  * Providers whose SMTP servers auto-save sent messages to the Sent folder.
@@ -109,7 +137,7 @@ async function handleNew(accounts: AccountConfig[], input: SendInput): Promise<a
 
   const account = resolveSingleAccount(accounts, input.account)
 
-  const result = await sendNewEmail(account, {
+  const result = await dispatchSendNew(account, {
     to: input.to,
     subject: input.subject,
     body: input.body,
@@ -161,7 +189,7 @@ async function handleReply(accounts: AccountConfig[], input: SendInput): Promise
     )
   }
 
-  const result = await replyToEmail(account, {
+  const result = await dispatchReply(account, {
     to: replyTo,
     subject: input.subject || original.subject,
     body: input.body,
@@ -212,7 +240,7 @@ async function handleForward(accounts: AccountConfig[], input: SendInput): Promi
   // Read original email to include in forward
   const original = await readEmail(account, input.uid, folder)
 
-  const result = await forwardEmail(account, {
+  const result = await dispatchForward(account, {
     to: input.to,
     subject: input.subject || original.subject,
     body: input.body,

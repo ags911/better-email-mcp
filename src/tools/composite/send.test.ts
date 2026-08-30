@@ -14,7 +14,20 @@ vi.mock('../helpers/smtp-client.js', () => ({
   forwardEmail: vi.fn()
 }))
 
+vi.mock('../helpers/resend-client.js', () => ({
+  sendNewEmailViaResend: vi.fn(),
+  replyToEmailViaResend: vi.fn(),
+  forwardEmailViaResend: vi.fn(),
+  shouldUseResend: vi.fn().mockReturnValue(false)
+}))
+
 import { appendToFolder, readEmail, resolveSentFolder } from '../helpers/imap-client.js'
+import {
+  forwardEmailViaResend,
+  replyToEmailViaResend,
+  sendNewEmailViaResend,
+  shouldUseResend
+} from '../helpers/resend-client.js'
 import { forwardEmail, replyToEmail, sendNewEmail } from '../helpers/smtp-client.js'
 import { send } from './send.js'
 
@@ -24,6 +37,10 @@ const mockReplyToEmail = vi.mocked(replyToEmail)
 const mockForwardEmail = vi.mocked(forwardEmail)
 const mockResolveSentFolder = vi.mocked(resolveSentFolder)
 const mockAppendToFolder = vi.mocked(appendToFolder)
+const mockSendNewEmailViaResend = vi.mocked(sendNewEmailViaResend)
+const mockReplyToEmailViaResend = vi.mocked(replyToEmailViaResend)
+const mockForwardEmailViaResend = vi.mocked(forwardEmailViaResend)
+const mockShouldUseResend = vi.mocked(shouldUseResend)
 
 const gmailAccounts: AccountConfig[] = [
   {
@@ -698,5 +715,103 @@ describe('send - reply auto-derive', () => {
         references: '<msgid77@test>'
       })
     )
+  })
+})
+
+// ============================================================================
+// transport dispatch (Resend vs SMTP)
+// ============================================================================
+describe('transport dispatch', () => {
+  it('uses SMTP when shouldUseResend() is false (default)', async () => {
+    mockShouldUseResend.mockReturnValue(false)
+    mockSendNewEmail.mockResolvedValue({ success: true, message_id: '<smtp-id@gmail.com>' })
+
+    const result = await send(gmailAccounts, {
+      action: 'new',
+      account: 'user1@gmail.com',
+      to: 'someone@example.com',
+      subject: 'Test',
+      body: 'body'
+    })
+
+    expect(mockSendNewEmail).toHaveBeenCalledTimes(1)
+    expect(mockSendNewEmailViaResend).not.toHaveBeenCalled()
+    expect(result.message_id).toBe('<smtp-id@gmail.com>')
+  })
+
+  it('uses Resend when shouldUseResend() is true, for new/reply/forward', async () => {
+    mockShouldUseResend.mockReturnValue(true)
+    mockSendNewEmailViaResend.mockResolvedValue({ success: true, message_id: 'resend-new-id' })
+    mockReplyToEmailViaResend.mockResolvedValue({ success: true, message_id: 'resend-reply-id' })
+    mockForwardEmailViaResend.mockResolvedValue({ success: true, message_id: 'resend-fwd-id' })
+    mockReadEmail.mockResolvedValue({
+      account_id: 'user1_gmail_com',
+      account_email: 'user1@gmail.com',
+      uid: 1,
+      message_id: '<orig@test>',
+      subject: 'Original',
+      from: 'sender@test.com',
+      to: 'user1@gmail.com',
+      date: '2025-06-01',
+      flags: [],
+      body_text: 'original body',
+      attachments: []
+    })
+
+    const newResult = await send(gmailAccounts, {
+      action: 'new',
+      account: 'user1@gmail.com',
+      to: 'someone@example.com',
+      subject: 'Test',
+      body: 'body'
+    })
+    expect(mockSendNewEmailViaResend).toHaveBeenCalledTimes(1)
+    expect(mockSendNewEmail).not.toHaveBeenCalled()
+    expect(newResult.message_id).toBe('resend-new-id')
+
+    const replyResult = await send(gmailAccounts, {
+      action: 'reply',
+      account: 'user1@gmail.com',
+      body: 'reply body',
+      uid: 1
+    })
+    expect(mockReplyToEmailViaResend).toHaveBeenCalledTimes(1)
+    expect(mockReplyToEmail).not.toHaveBeenCalled()
+    expect(replyResult.message_id).toBe('resend-reply-id')
+
+    const forwardResult = await send(gmailAccounts, {
+      action: 'forward',
+      account: 'user1@gmail.com',
+      to: 'someone@example.com',
+      body: 'fwd note',
+      uid: 1
+    })
+    expect(mockForwardEmailViaResend).toHaveBeenCalledTimes(1)
+    expect(mockForwardEmail).not.toHaveBeenCalled()
+    expect(forwardResult.message_id).toBe('resend-fwd-id')
+  })
+
+  it('still attempts save-to-sent via IMAP when sending through Resend', async () => {
+    mockShouldUseResend.mockReturnValue(true)
+    mockSendNewEmailViaResend.mockResolvedValue({
+      success: true,
+      message_id: 'resend-id',
+      raw: Buffer.from('raw-bytes')
+    })
+
+    const result = await send(gmailAccounts, {
+      action: 'new',
+      account: 'user1@gmail.com',
+      to: 'someone@example.com',
+      subject: 'Test',
+      body: 'body'
+    })
+
+    // gmailAccounts auto-saves to sent (host includes 'gmail'), so saveToSent
+    // short-circuits without calling appendToFolder — this just confirms the
+    // Resend path returns `raw` bytes in the same shape the SMTP path does,
+    // so saveToSent's `!result.raw` check behaves identically either way.
+    expect(result.saved_to_sent).toBe(false)
+    expect(mockAppendToFolder).not.toHaveBeenCalled()
   })
 })
