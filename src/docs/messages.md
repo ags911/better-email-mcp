@@ -12,7 +12,16 @@ Email messages: search, read, mark_read, mark_unread, flag, unflag, move, archiv
 - **forward** includes the original email body with a separator
 - Outbound bodies support plain text or HTML; do not mix both
 - **scheduled_at** (on `new` only) requires the Resend transport (`RESEND_API_KEY` set on the server) — plain SMTP has no scheduling concept and this errors with `SCHEDULING_REQUIRES_RESEND` instead of silently sending immediately
-- A scheduled send is not written to Sent until it actually fires, since the server has no callback for that; `cancel_scheduled` and `get_email_status` also require the Resend transport
+- A scheduled send's `saved_to_sent` is `false` in the immediate response (nothing has actually gone out yet) and `pending_sent_folder_append: true` marks that a Sent-folder copy will be appended automatically once Resend's webhook confirms `email.sent` — this requires `RESEND_WEBHOOK_SECRET` to be configured on the server (see below). Without it, or if the server restarts between scheduling and the webhook firing, that message's Sent-folder copy is silently skipped — the actual send is unaffected either way.
+- `cancel_scheduled` and `get_email_status` also require the Resend transport
+
+## Resend webhook (scheduled-send Sent-folder parity)
+
+When run in HTTP mode, the server exposes `POST /webhooks/resend` for Resend's webhook (signed via Svix). Configure `RESEND_WEBHOOK_SECRET` and register the URL in the Resend dashboard for the sending domain.
+
+- `email.sent` — appends the held raw message to the Sent folder for any scheduled send this process registered (immediate sends already appended synchronously and are unaffected).
+- `email.bounced` / `email.complained` — logged to server logs (`console.error`); no Sent-folder action.
+- The webhook rejects with 401/400 if the secret is unset, headers are missing, or the signature doesn't verify — it never processes an unverified request.
 
 ## Actions
 

@@ -15,6 +15,7 @@ import {
   sendNewEmailViaResend,
   shouldUseResend
 } from '../helpers/resend-client.js'
+import { registerPendingSentAppend, takePendingSentAppend } from '../helpers/resend-webhook.js'
 import type { EmailAttachment, SendEmailOptions, SendResult } from '../helpers/smtp-client.js'
 import { forwardEmail, replyToEmail, sendNewEmail } from '../helpers/smtp-client.js'
 
@@ -65,8 +66,14 @@ async function dispatchForward(
  * - Gmail: smtp.gmail.com
  * - Yahoo: smtp.mail.yahoo.com
  * - iCloud: smtp.mail.me.com
+ *
+ * Only applies when actually sending through that provider's own SMTP
+ * server. Resend never touches smtp.gmail.com/etc — it sends over its own
+ * HTTPS API — so the provider never sees the message and never auto-saves
+ * it, regardless of which provider hosts the account.
  */
 function autoSavesToSent(account: AccountConfig): boolean {
+  if (shouldUseResend()) return false
   const host = account.smtp.host
   return host.includes('gmail') || host.includes('yahoo') || host.includes('mail.me')
 }
@@ -176,6 +183,11 @@ async function handleCancelScheduled(input: SendInput): Promise<any> {
 
   const result = await cancelScheduledEmailViaResend(input.email_id)
 
+  // A cancelled send will never fire `email.sent`, so drop any pending
+  // Sent-folder append registered for it — otherwise it sits in memory
+  // forever waiting for a webhook event that's never coming.
+  takePendingSentAppend(input.email_id)
+
   return {
     action: 'cancel_scheduled',
     email_id: input.email_id,
@@ -227,9 +239,19 @@ async function handleNew(accounts: AccountConfig[], input: SendInput): Promise<a
     scheduled_at: input.scheduled_at
   })
 
-  // A scheduled send hasn't happened yet, so there's nothing to save to Sent
-  // until it actually fires — Resend does not notify this server when that occurs.
-  const saved_to_sent = input.scheduled_at ? false : await saveToSent(account, result)
+  let saved_to_sent = false
+  let pending_sent_folder_append = false
+  if (input.scheduled_at) {
+    // The send hasn't happened yet, so there's nothing to APPEND until
+    // Resend's webhook confirms `email.sent` (see resend-webhook.ts). Hold
+    // the raw bytes already built above so that webhook can finish the job.
+    if (result.raw && !autoSavesToSent(account)) {
+      registerPendingSentAppend(result.message_id, { account, raw: result.raw })
+      pending_sent_folder_append = true
+    }
+  } else {
+    saved_to_sent = await saveToSent(account, result)
+  }
 
   return {
     action: 'new',
@@ -240,7 +262,8 @@ async function handleNew(accounts: AccountConfig[], input: SendInput): Promise<a
     message_id: result.message_id,
     status: input.scheduled_at ? 'scheduled' : 'sent',
     scheduled_at: input.scheduled_at,
-    saved_to_sent
+    saved_to_sent,
+    ...(input.scheduled_at ? { pending_sent_folder_append } : {})
   }
 }
 

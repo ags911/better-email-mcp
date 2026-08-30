@@ -23,6 +23,11 @@ vi.mock('../helpers/resend-client.js', () => ({
   shouldUseResend: vi.fn().mockReturnValue(false)
 }))
 
+vi.mock('../helpers/resend-webhook.js', () => ({
+  registerPendingSentAppend: vi.fn(),
+  takePendingSentAppend: vi.fn()
+}))
+
 import { appendToFolder, readEmail, resolveSentFolder } from '../helpers/imap-client.js'
 import {
   cancelScheduledEmailViaResend,
@@ -32,6 +37,7 @@ import {
   sendNewEmailViaResend,
   shouldUseResend
 } from '../helpers/resend-client.js'
+import { registerPendingSentAppend, takePendingSentAppend } from '../helpers/resend-webhook.js'
 import { forwardEmail, replyToEmail, sendNewEmail } from '../helpers/smtp-client.js'
 import { send } from './send.js'
 
@@ -47,6 +53,8 @@ const mockForwardEmailViaResend = vi.mocked(forwardEmailViaResend)
 const mockCancelScheduledEmailViaResend = vi.mocked(cancelScheduledEmailViaResend)
 const mockGetEmailStatusViaResend = vi.mocked(getEmailStatusViaResend)
 const mockShouldUseResend = vi.mocked(shouldUseResend)
+const mockRegisterPendingSentAppend = vi.mocked(registerPendingSentAppend)
+const mockTakePendingSentAppend = vi.mocked(takePendingSentAppend)
 
 const gmailAccounts: AccountConfig[] = [
   {
@@ -799,7 +807,7 @@ describe('transport dispatch', () => {
     expect(forwardResult.message_id).toBe('resend-fwd-id')
   })
 
-  it('still attempts save-to-sent via IMAP when sending through Resend', async () => {
+  it('appends to Sent via IMAP when sending through Resend, even for a Gmail-hosted account', async () => {
     mockShouldUseResend.mockReturnValue(true)
     mockSendNewEmailViaResend.mockResolvedValue({
       success: true,
@@ -815,12 +823,11 @@ describe('transport dispatch', () => {
       body: 'body'
     })
 
-    // gmailAccounts auto-saves to sent (host includes 'gmail'), so saveToSent
-    // short-circuits without calling appendToFolder — this just confirms the
-    // Resend path returns `raw` bytes in the same shape the SMTP path does,
-    // so saveToSent's `!result.raw` check behaves identically either way.
-    expect(result.saved_to_sent).toBe(false)
-    expect(mockAppendToFolder).not.toHaveBeenCalled()
+    // Resend never touches smtp.gmail.com, so Gmail's own Sent-folder
+    // auto-save never happens for a Resend-sent message — this server must
+    // APPEND it itself regardless of which provider hosts the account.
+    expect(result.saved_to_sent).toBe(true)
+    expect(mockAppendToFolder).toHaveBeenCalledTimes(1)
   })
 })
 
@@ -850,7 +857,7 @@ describe('send - scheduled new', () => {
     expect(result.message_id).toBe('resend-scheduled-id')
   })
 
-  it('does not attempt save-to-sent for a scheduled (not-yet-sent) email', async () => {
+  it('does not append to Sent immediately for a scheduled email, but registers a pending append for the webhook', async () => {
     mockShouldUseResend.mockReturnValue(true)
     mockSendNewEmailViaResend.mockResolvedValue({
       success: true,
@@ -867,8 +874,33 @@ describe('send - scheduled new', () => {
       scheduled_at: '2026-08-29T08:00:00+01:00'
     })
 
+    // Nothing is appended synchronously — that happens later, when Resend's
+    // webhook confirms `email.sent` (see resend-webhook.test.ts).
     expect(result.saved_to_sent).toBe(false)
     expect(mockAppendToFolder).not.toHaveBeenCalled()
+
+    expect(result.pending_sent_folder_append).toBe(true)
+    expect(mockRegisterPendingSentAppend).toHaveBeenCalledWith('resend-scheduled-id', {
+      account: outlookAccounts[0],
+      raw: Buffer.from('raw-bytes')
+    })
+  })
+
+  it('does not register a pending append when the transport returned no raw bytes', async () => {
+    mockShouldUseResend.mockReturnValue(true)
+    mockSendNewEmailViaResend.mockResolvedValue({ success: true, message_id: 'resend-scheduled-id-2' })
+
+    const result = await send(outlookAccounts, {
+      action: 'new',
+      account: 'user1@outlook.com',
+      to: 'someone@example.com',
+      subject: 'Test',
+      body: 'body',
+      scheduled_at: '2026-08-29T08:00:00+01:00'
+    })
+
+    expect(result.pending_sent_folder_append).toBe(false)
+    expect(mockRegisterPendingSentAppend).not.toHaveBeenCalled()
   })
 
   it('reports status: sent and no scheduled_at for an immediate send', async () => {
@@ -908,7 +940,7 @@ describe('send - scheduled new', () => {
 // cancel_scheduled / get_email_status
 // ============================================================================
 describe('send - cancel_scheduled', () => {
-  it('cancels a scheduled email by id', async () => {
+  it('cancels a scheduled email by id and drops its pending Sent-folder append', async () => {
     mockCancelScheduledEmailViaResend.mockResolvedValue({ success: true, id: 'resend-id-1' })
 
     const result = await send(gmailAccounts, {
@@ -918,6 +950,9 @@ describe('send - cancel_scheduled', () => {
 
     expect(mockCancelScheduledEmailViaResend).toHaveBeenCalledWith('resend-id-1')
     expect(result).toEqual({ action: 'cancel_scheduled', email_id: 'resend-id-1', success: true })
+    // A cancelled send will never fire `email.sent`, so nothing should be
+    // left waiting in memory for a webhook event that's never coming.
+    expect(mockTakePendingSentAppend).toHaveBeenCalledWith('resend-id-1')
   })
 
   it('requires email_id', async () => {

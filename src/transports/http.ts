@@ -39,6 +39,7 @@ import { RELAY_SCHEMA } from '../relay-schema.js'
 import { assembleEmailCredentials, type EmailAccountCard, findUnusableAccountCards } from '../relay-setup.js'
 import { type AccountConfig, loadConfig, parseCredentials } from '../tools/helpers/config.js'
 import { initiateOutlookDeviceCode, isOutlookDomain, setOutlookTokenStore } from '../tools/helpers/oauth2.js'
+import { createResendWebhookRoute } from '../tools/helpers/resend-webhook.js'
 import { registerTools } from '../tools/registry.js'
 
 const SERVER_NAME = 'better-email-mcp'
@@ -286,7 +287,11 @@ function buildOptions(args: {
     stableSubEnabled: true,
     setupCompleteHook: (markComplete: (key?: string) => void) => {
       setMarkSetupComplete(markComplete)
-    }
+    },
+    // Resend's webhook (Sent-folder parity for scheduled sends, see
+    // resend-webhook.ts) — served on the same port, bypassing Bearer auth
+    // since Resend authenticates via its own Svix signature instead.
+    extraRoutes: [createResendWebhookRoute()]
   }
 }
 

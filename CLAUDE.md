@@ -21,7 +21,9 @@ The live server runs on **Railway** (`better-email-mcp-production.up.railway.app
 3. Verify the pushed manifest: `docker manifest inspect ags911/better-email-mcp:<tag>` and confirm `"architecture": "amd64"`.
 4. Hand the tag to the user. **Swapping the image tag in Railway's dashboard and redeploying is their manual step** — don't attempt it via API/CLI unless explicitly asked.
 
-`RESEND_API_KEY` and `EMAIL_CREDENTIALS` are Railway environment variables. Never set, guess, or hardcode their values in code, commits, or tool calls — the user enters them directly in Railway's dashboard.
+`RESEND_API_KEY`, `RESEND_WEBHOOK_SECRET`, and `EMAIL_CREDENTIALS` are Railway environment variables. Never set, guess, or hardcode their values in code, commits, or tool calls — the user enters them directly in Railway's dashboard. Note: Resend only offers two API key tiers, Sending-only or Full-access — `get_email_status`/`cancel_scheduled` need Full-access, a send-only key can't call them.
+
+Shipping a webhook-dependent change additionally needs the URL registered in Resend's dashboard (`<PUBLIC_URL>/webhooks/resend`) — also the user's manual step, once the endpoint is deployed.
 
 ### Docker gotchas (both have actually happened)
 
@@ -53,6 +55,7 @@ bunx tsc --noEmit -p tsconfig.json    # broader than build's tsc --build; catche
 - **`messages` tool, `new` action**: optional `scheduled_at` (ISO 8601 or natural language) — Resend-only, errors `SCHEDULING_REQUIRES_RESEND` rather than silently sending immediately if SMTP is active. `cancel_scheduled` and `get_email_status` actions manage a Resend-sent message afterward by its `message_id` (also returned as `message_id` from the original send).
 - **`relay-schema.ts`**: optional `smtp_host`/`smtp_port`/`smtp_security` override fields on the OAuth credential relay form, for accounts where SMTP runs on a different host/port than IMAP.
 - Every Resend send call carries an `Idempotency-Key` header, to guard against duplicate sends on network-level retry.
+- **`POST /webhooks/resend`** (`resend-webhook.ts`, registered as `extraRoutes` on the mcp-core HTTP server in `transports/http.ts`) — Resend's webhook, signed via Svix, verified against `RESEND_WEBHOOK_SECRET`; fails closed (401/400) on any missing/invalid signature, never processes an unverified request. On `email.sent`, appends the raw MIME bytes built at schedule time (held in an **in-memory Map only** — no durable store wired up, so a process restart between scheduling and the webhook firing silently skips that message's Sent-folder copy; the actual send is unaffected) to close the Sent-folder gap for scheduled sends. On `email.bounced`/`email.complained`, logs to server logs — no `list_bounces` tool action exists (intentionally deferred; add if actually needed). Fixed a related latent bug in the same change: `autoSavesToSent()` in `send.ts` now returns `false` whenever Resend is the active transport, since Resend never touches the account's own SMTP server (Gmail/Yahoo/iCloud auto-save only applies when actually sending through their SMTP).
 - **Tracking pixels: deliberately not implemented.** Resend supports open/click tracking as a domain-level toggle (off by default). Decision was to leave it off given this mailbox sends cold outreach to a compliance/regulated-finance audience — don't add this without asking first.
 - **IMAP read path** (`imap-client.ts`, search/read/folders/attachments) has been treated as out of scope for every send-focused change so far. Ask before touching it.
 
