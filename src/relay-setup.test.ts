@@ -107,6 +107,105 @@ describe('assembleEmailCredentials', () => {
     expect(assembleEmailCredentials([])).toBe('')
     expect(assembleEmailCredentials(undefined)).toBe('')
   })
+
+  it('encodes SMTP host, port, and security when IMAP host/port are also present', () => {
+    expect(
+      assembleEmailCredentials([
+        {
+          email: 'signals@arbiris.uk',
+          password: 'p',
+          imap_host: 'mail.example.net',
+          imap_port: '993',
+          smtp_host: 'mail.example.net',
+          smtp_port: '465',
+          smtp_security: 'tls'
+        }
+      ])
+    ).toBe('signals@arbiris.uk:p:mail.example.net:993:mail.example.net:465:tls')
+  })
+
+  it('defaults IMAP port to 993 when SMTP fields are set but IMAP port is blank', () => {
+    expect(
+      assembleEmailCredentials([
+        {
+          email: 'user@custom.com',
+          password: 'p',
+          imap_host: 'imap.custom.com',
+          smtp_host: 'smtp.custom.com',
+          smtp_port: '587',
+          smtp_security: 'starttls'
+        }
+      ])
+    ).toBe('user@custom.com:p:imap.custom.com:993:smtp.custom.com:587:starttls')
+  })
+
+  it('encodes SMTP host without a port or security', () => {
+    expect(
+      assembleEmailCredentials([
+        {
+          email: 'user@custom.com',
+          password: 'p',
+          imap_host: 'imap.custom.com',
+          imap_port: '993',
+          smtp_host: 'smtp.custom.com'
+        }
+      ])
+    ).toBe('user@custom.com:p:imap.custom.com:993:smtp.custom.com')
+  })
+
+  it('encodes SMTP host and port without security', () => {
+    expect(
+      assembleEmailCredentials([
+        {
+          email: 'user@custom.com',
+          password: 'p',
+          imap_host: 'imap.custom.com',
+          imap_port: '993',
+          smtp_host: 'smtp.custom.com',
+          smtp_port: '465'
+        }
+      ])
+    ).toBe('user@custom.com:p:imap.custom.com:993:smtp.custom.com:465')
+  })
+
+  it('lowercases and trims the SMTP security value', () => {
+    expect(
+      assembleEmailCredentials([
+        {
+          email: 'user@custom.com',
+          password: 'p',
+          imap_host: 'imap.custom.com',
+          imap_port: '993',
+          smtp_host: 'smtp.custom.com',
+          smtp_port: '465',
+          smtp_security: '  TLS  '
+        }
+      ])
+    ).toBe('user@custom.com:p:imap.custom.com:993:smtp.custom.com:465:tls')
+  })
+
+  it('ignores SMTP fields entirely when no IMAP host is present', () => {
+    expect(
+      assembleEmailCredentials([
+        { email: 'user@custom.com', password: 'p', smtp_host: 'smtp.custom.com', smtp_port: '465' }
+      ])
+    ).toBe('user@custom.com:p')
+  })
+
+  it('falls back to plain IMAP-only encoding when smtp_host is blank', () => {
+    expect(
+      assembleEmailCredentials([
+        {
+          email: 'user@custom.com',
+          password: 'p',
+          imap_host: 'imap.custom.com',
+          imap_port: '1993',
+          smtp_host: '  ',
+          smtp_port: '465'
+        }
+      ])
+    ).toBe('user@custom.com:p:imap.custom.com:1993')
+  })
 })
 
 describe('findUnusableAccountCards', () => {

@@ -21,7 +21,15 @@ describe('RELAY_SCHEMA', () => {
 
   it('declares the account fields with email required and password optional', () => {
     const fields = RELAY_SCHEMA.cardGroup?.fields ?? []
-    expect(fields.map((f) => f.key)).toEqual(['email', 'password', 'imap_host', 'imap_port'])
+    expect(fields.map((f) => f.key)).toEqual([
+      'email',
+      'password',
+      'imap_host',
+      'imap_port',
+      'smtp_host',
+      'smtp_port',
+      'smtp_security'
+    ])
 
     const email = fields.find((f) => f.key === 'email')
     expect(email?.type).toBe('email')
@@ -38,5 +46,27 @@ describe('RELAY_SCHEMA', () => {
     const imapPort = fields.find((f) => f.key === 'imap_port')
     expect(imapPort?.required).toBe(false)
     expect(imapPort?.validation).toBe('^\\d*$')
+  })
+
+  it('declares optional SMTP override fields for asymmetric IMAP/SMTP topologies', () => {
+    const fields = RELAY_SCHEMA.cardGroup?.fields ?? []
+
+    const smtpHost = fields.find((f) => f.key === 'smtp_host')
+    expect(smtpHost).toBeDefined()
+    expect(smtpHost?.type).toBe('text')
+    expect(smtpHost?.required).toBe(false)
+    expect(smtpHost?.validation).toBe('^\\S*$')
+
+    const smtpPort = fields.find((f) => f.key === 'smtp_port')
+    expect(smtpPort).toBeDefined()
+    expect(smtpPort?.type).toBe('text')
+    expect(smtpPort?.required).toBe(false)
+    expect(smtpPort?.validation).toBe('^\\d*$')
+
+    const smtpSecurity = fields.find((f) => f.key === 'smtp_security')
+    expect(smtpSecurity).toBeDefined()
+    expect(smtpSecurity?.type).toBe('text')
+    expect(smtpSecurity?.required).toBe(false)
+    expect(smtpSecurity?.validation).toBe('^(tls|ssl|starttls|none)?$')
   })
 })
